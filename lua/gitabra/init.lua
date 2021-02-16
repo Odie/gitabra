@@ -1,4 +1,4 @@
-local plugin_name = 'tigam'
+local plugin_name = 'gitabra'
 
 local function unload()
 	local dir = plugin_name .. "/"
@@ -17,14 +17,14 @@ local function reload()
 end
 
 local M = {
-	git_status = require('tigam.git_status').git_status
+	git_status = require('gitabra.git_status').git_status
 }
 
-if vim.g.tigma_dev == 1 then
+if vim.g.gitabra_dev == 1 then
 	M.reload = reload
-  vim.api.nvim_set_keymap('n', ',r', '<cmd>lua require("tigam").reload()<cr>', {})
-  vim.api.nvim_set_keymap('n', ',gs', '<cmd>lua require("tigam").git_status()<cr>', {})
-  vim.api.nvim_set_keymap('n', ',gl', '<cmd>lua print(vim.inspect(package.loaded["tigam"]))<cr>', {})
+  vim.api.nvim_set_keymap('n', ',r', '<cmd>lua require("gitabra").reload()<cr>', {})
+  vim.api.nvim_set_keymap('n', ',gs', '<cmd>lua require("gitabra").git_status()<cr>', {})
+  vim.api.nvim_set_keymap('n', ',gl', '<cmd>lua print(vim.inspect(package.loaded["gitabra"]))<cr>', {})
 end
 
 return M

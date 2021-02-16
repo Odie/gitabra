@@ -1,4 +1,4 @@
-local job = require('tigam.job')
+local job = require('gitabra.job')
 local chronos = require('chronos')
 
 -- Returns an iterator over each line in `str`

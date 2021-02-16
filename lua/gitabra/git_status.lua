@@ -1,4 +1,4 @@
-local job = require("tigam.job")
+local job = require("gitabra.job")
 
 
 -- Execute the given command asynchronously

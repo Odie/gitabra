@@ -1,5 +1,5 @@
 (module scratch
-  {require {u tigam.util}})
+  {require {u gitabra.util}})
 
 (do
   (def r (u.system_async "git status"))
