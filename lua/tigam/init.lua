@@ -1,9 +1,6 @@
-local function hello()
-		print("hello world")
-end
+local plugin_name = 'tigam'
 
-local function reload()
-	local plugin_name = 'tigam'
+local function unload()
 	local dir = plugin_name .. "/"
 	local dot = plugin_name .. "."
 	for key in pairs(package.loaded) do
@@ -14,14 +11,20 @@ local function reload()
 	end
 end
 
+local function reload()
+	unload()
+	require(plugin_name)
+end
+
 local M = {
-	hello = hello
+	git_status = require('tigam.git_status').git_status
 }
 
 if vim.g.tigma_dev == 1 then
 	M.reload = reload
   vim.api.nvim_set_keymap('n', ',r', '<cmd>lua require("tigam").reload()<cr>', {})
-  vim.api.nvim_set_keymap('n', ',t', '<cmd>lua require("tigam").hello()<cr>', {})
+  vim.api.nvim_set_keymap('n', ',gs', '<cmd>lua require("tigam").git_status()<cr>', {})
+  vim.api.nvim_set_keymap('n', ',gl', '<cmd>lua print(vim.inspect(package.loaded["tigam"]))<cr>', {})
 end
 
 return M
