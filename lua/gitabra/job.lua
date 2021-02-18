@@ -1,5 +1,6 @@
 -- Adapted from https://github.com/TravonteD/luajob
 local M = {}
+M.__index = M
 
 local function shallow_copy(t)
   local t2 = {}
@@ -21,19 +22,14 @@ local function wrap_ctx(ctx, callback)
   end
 end
 
-function M:new(o)
-  o = o or {}
-  for n,f in pairs(o) do
-    self[n] = f
-  end
-  setmetatable(o, self)
-  self.__index = self
+function M.new(o)
+  setmetatable(o, M)
   return o
 end
 
 function M:send(data)
-  M.stdin:write(data)
-  M.stdin:shutdown()
+  self.stdin:write(data)
+  self.stdin:shutdown()
 end
 
 function M:stop()
@@ -66,16 +62,12 @@ function M:options()
   local args
   if type(self.cmd) == "string" then
     args = vim.fn.split(self.cmd, ' ')
-    print("options got a string as a command")
   else
     args = shallow_copy(self.cmd)
-    print("options got something else as a command")
   end
-  print("args: ", vim.inspect(args))
 
   options.command = table.remove(args, 1)
   options.args = args
-  print("options: ", vim.inspect(options))
 
   options.stdio = {
     self.stdin,
@@ -102,12 +94,29 @@ function M:start()
   local options = self:options()
   self.handle = vim.loop.spawn(options.command,
     options,
-    vim.schedule_wrap(wrap_ctx(self, M.shutdown)))
+    vim.schedule_wrap(wrap_ctx(self, self.shutdown)))
   if self.on_stdout then
-      self.stdout:read_start(vim.schedule_wrap(wrap_ctx(self, M.on_stdout)))
+      self.stdout:read_start(vim.schedule_wrap(wrap_ctx(self, self.on_stdout)))
   end
   if self.on_stderr then
-      self.stderr:read_start(vim.schedule_wrap(wrap_ctx(self, M.on_stderr)))
+      self.stderr:read_start(vim.schedule_wrap(wrap_ctx(self, self.on_stderr)))
   end
 end
+
+-- Wait until all the jobs are done
+function M.wait_all(ms, jobs)
+  return vim.wait(ms, function()
+    -- If any of the jobs are not done yet,
+    -- we're not done
+    for _, j in pairs(jobs) do
+      if j.done == false then
+        return false
+      end
+    end
+
+    -- All of the jobs are done...
+    return true
+  end, 5)
+end
+
 return M

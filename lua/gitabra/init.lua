@@ -17,7 +17,7 @@ local function reload()
 end
 
 local M = {
-	git_status = require('gitabra.git_status').git_status
+	gitabra_status = require('gitabra.git_status').gitabra_status
 }
 
 if vim.g.gitabra_dev == 1 then

@@ -7,6 +7,10 @@ local function lines(str)
 end
 
 -- Execute the given command asynchronously
+-- Returns a `results` table.
+-- `done` field indicates if the job has finished running
+-- `output` table stores the output of the executed command
+-- `job` field contains a `gitabra.job` object used to run the command
 --
 local function system_async(cmd)
   local result = {
@@ -14,7 +18,7 @@ local function system_async(cmd)
     done = false
   }
 
-	local j = job:new({
+	local j = job.new({
 			cmd = cmd,
     	on_stdout = function(_, err, data)
       	if err then
@@ -40,5 +44,4 @@ local function system_async(cmd)
 	return result
 end
 
-return {system_async = system_async,
-        hello = hello}
+return {system_async = system_async}
