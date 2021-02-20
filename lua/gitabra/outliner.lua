@@ -53,6 +53,7 @@ end
 
 
 -- Add a `child_node` into the `parent_node`
+-- Return the added child node
 function M:add_node(parent_node, child_node)
   -- Use the root node if a parent node is not specified
   if not parent_node then
@@ -77,6 +78,7 @@ function M:add_node(parent_node, child_node)
  	child_node.extmark_id = api.nvim_buf_set_extmark(self.buffer, namespace_id, lineno, 0, {})
 
   table.insert(parent_node.children, child_node)
+  return child_node
 end
 
 

@@ -103,20 +103,27 @@ function M:start()
   end
 end
 
--- Wait until all the jobs are done
-function M.wait_all(ms, jobs)
-  return vim.wait(ms, function()
-    -- If any of the jobs are not done yet,
-    -- we're not done
-    for _, j in pairs(jobs) do
-      if j.done == false then
-        return false
-      end
+function M.are_jobs_done(jobs)
+  -- If any of the jobs are not done yet,
+  -- we're not done
+  for _, j in pairs(jobs) do
+    if j.done == false then
+      return false
     end
+  end
 
-    -- All of the jobs are done...
-    return true
-  end, 5)
+  -- All of the jobs are done...
+  return true
+end
+
+local chronos = require('chronos')
+
+-- Wait up to `ms` approximately milliseconds until all the jobs are done
+function M.wait_all(ms, jobs)
+  return vim.wait(ms,
+    function()
+      return M.are_jobs_done(jobs)
+    end, 5)
 end
 
 return M

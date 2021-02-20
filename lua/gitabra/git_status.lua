@@ -1,6 +1,7 @@
 local u = require("gitabra.util")
 local chronos = require("chronos")
 local job = require("gitabra.job")
+local outliner = require("gitabra.outliner")
 
 local function git_get_branch()
   return u.system_async('git branch --show-current')
@@ -26,8 +27,9 @@ local function status_letter_name(letter)
   end
 end
 
-local function gitabra_status()
-  print("ENTERING gitabra_status")
+local function status_info()
+  local funcname = debug.getinfo(1, "n").name
+  print("ENTERING", funcname)
 
   -- local buf = vim.api.nvim_create_buf(true, false)
   -- vim.api.nvim_set_current_buf(buf)
@@ -38,12 +40,15 @@ local function gitabra_status()
   local status_j = git_status()
   local jobs = {branch_j, branch_msg_j, status_j}
 
-  job.wait_all(5, jobs)
+  local wait_result = job.wait_all(1000, jobs)
+  if not wait_result then
+    error(string.format("%s: unable to complete git commands withint alotted time", funcname))
+  end
 
   local stop = chronos.nanotime()
-  print("git commands completed")
-  print("Elapsed:", stop-start)
+  print(string.format("git commands completed [%f]", stop-start))
 
+  --------------------------------------------------------------------
   start = chronos.nanotime()
 
   local files = {}
@@ -76,12 +81,12 @@ local function gitabra_status()
   end
 
   stop = chronos.nanotime()
-  print("Info reorg completed")
-  print("Elapsed:", stop-start)
+  print(string.format("Info reorg completed [%f]", stop-start))
 
-  print("EXITING gitabra_status")
+
+  print("EXITING", funcname)
   return {
-    head = string.format("[%s] %s", branch_j.output[1], branch_msg_j.output[1]:sub(2, -2)),
+    header = string.format("[%s] %s", branch_j.output[1], branch_msg_j.output[1]:sub(2, -2)),
     files = files,
     untracked = untracked,
     staged = staged,
@@ -89,7 +94,40 @@ local function gitabra_status()
   }
 end
 
+local function gitabra_status()
+  local funcname = debug.getinfo(1, "n").name
+  print("ENTERING", funcname)
+  local info = status_info()
+
+  --------------------------------------------------------------------
+  print("Creating outline")
+  local start = chronos.nanotime()
+  local outline = outliner.new()
+
+  if info.header then
+    outline:add_node(nil, {heading_text = info.header})
+  end
+
+  if #info.untracked ~= 0 then
+    local section = outline:add_node(nil, {
+        heading_text = "Untracked",
+        id = "untracked",
+    })
+    for _, file in pairs(info.untracked) do
+      outline:add_node(section, {heading_text = file.name})
+    end
+  end
+
+  local stop = chronos.nanotime()
+  print("Outline completed")
+  print("Elapsed:", stop-start)
+
+  --------------------------------------------------------------------
+  print("EXITING", funcname)
+end
+
 return {
+  status_info = status_info,
   gitabra_status = gitabra_status,
 }
 

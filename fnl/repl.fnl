@@ -1,5 +1,5 @@
 (module repl
-  {require {u gitabra.util
+  {require { u gitabra.util
             st gitabra.git_status
             job gitabra.job
             outliner gitabra.outliner }})
@@ -21,6 +21,7 @@
 (comment
   (unload)
 
+  (st.status_info)
   (st.gitabra_status)
 
   outliner
@@ -28,7 +29,7 @@
   (getmetatable outline)
   (setmetatable outline outliner)
 
-  (def outline (outliner.new {}))
+  (def outline (outliner.new))
 
   outline
 
