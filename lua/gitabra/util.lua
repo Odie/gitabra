@@ -44,6 +44,15 @@ local function system_async(cmd)
 	return result
 end
 
+local function table_lazy_get(table, key, default)
+  local v = table[key]
+  if not v then
+    table[key] = default
+    v = default
+  end
+  return v
+end
+
 -- Given the `root` of a tree of tables,
 --
 -- Returns the node sitting at the `path`, which should be
@@ -73,6 +82,9 @@ end
 -- Alias for better code clarity
 local table_push = table.insert
 local table_pop = table.remove
+local function table_get_last(t)
+  return t[#t]
+end
 
 
 -- Given a `root` and the `target_node` we're looking for,
@@ -116,6 +128,7 @@ local function path_from_node_compare(root, target_node, compare_fn)
   end
 end
 
+
 local function path_from_node(root, target_node)
   return path_from_node_compare(root, target_node,
     function(cur_node, target_node)
@@ -128,9 +141,82 @@ local function path_from_node(root, target_node)
 end
 
 
+local function table_depth_first_visit(root_table)
+  local stack = {}
+
+  table_push(stack, {
+      node = root_table,
+      visited = false
+  })
+
+  local depth_first_visit
+  depth_first_visit = function()
+    local node = table_get_last(stack)
+
+    -- If there are no more nodes to visit,
+    -- we're done!
+    if node == nil then
+      return nil
+    end
+
+    -- Visit the node itself
+    if not node.visited then
+      node.visited = true
+      return node.node
+    end
+
+    -- Grab the iterator for the current node
+    local iter = node.iter
+    if not node.iter then
+      node.iter = {pairs(node.node)}
+      -- We should get back a function `f`, an invariant `s`, and a control variable `v`
+
+      iter = node.iter
+    end
+
+    -- Grab a child node
+    while true do
+      -- local k, next_node = iter(node.node)
+      local k, next_node = iter[1](iter[2], iter[3]) -- f(s, v)
+      iter[3] = k -- update the control var to prep for next iteration
+
+      -- Do we have more child nodes to visit?
+      if k == nil then
+        -- If not, continue visits at the parent
+        table_pop(stack)
+        return depth_first_visit()
+      end
+
+      -- Visit child nodes
+      if type(next_node) == "table" then
+        table_push(stack, {
+            node = next_node,
+            visted = false
+        })
+        return depth_first_visit()
+      end
+    end
+  end
+
+  return depth_first_visit
+end
+
+
+local function table_find_node(t, pred)
+  for node in table_depth_first_visit(t) do
+    if pred(node) then
+      return node
+    end
+  end
+  return nil
+end
+
+
 return {
   system_async = system_async,
   node_from_path = node_from_path,
   path_from_node = path_from_node,
-  path_from_node_compare = path_from_node_compare,
+  table_depth_first_visit = table_depth_first_visit,
+  table_lazy_get = table_lazy_get,
+  table_find_node = table_find_node,
 }
