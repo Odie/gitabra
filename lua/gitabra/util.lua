@@ -1,5 +1,6 @@
 local job = require('gitabra.job')
 local chronos = require('chronos')
+local api = vim.api
 
 -- Returns an iterator over each line in `str`
 local function lines(str)
@@ -212,6 +213,20 @@ local function table_find_node(t, pred)
 end
 
 
+-- Make sure we have at least `lineno` lines in the buffer
+-- This helps when we're trying to insert lines at a position beyond the
+-- current end of the buffer
+local function buf_padlines_to(buf, lineno)
+  local count = api.nvim_buf_line_count(buf)
+  if (lineno > count) then
+    local empty_lines = {}
+    for _ = 1, lineno-count do
+      table.insert(empty_lines, "")
+    end
+    api.nvim_buf_set_lines(buf, count, count, true, empty_lines)
+  end
+end
+
 return {
   system_async = system_async,
   node_from_path = node_from_path,
@@ -219,4 +234,5 @@ return {
   table_depth_first_visit = table_depth_first_visit,
   table_lazy_get = table_lazy_get,
   table_find_node = table_find_node,
+  buf_padlines_to = buf_padlines_to,
 }

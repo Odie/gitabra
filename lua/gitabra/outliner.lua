@@ -4,18 +4,19 @@ local u = require('gitabra.util')
 local M = {}
 M.__index = M
 
-
-local namespace_id = api.nvim_create_namespace("gitabra")
+local namespace_id = api.nvim_create_namespace("gitabra.outliner")
+M.namespace_id = namespace_id
 
 
 -- Returns the line number where the beginning of a new node should be placed if it were
 -- added to the parent_node
 local function new_node_lineno(self, parent_node)
+  -- print(">>> new_node_lineno")
   local children = parent_node.children
   local target_node = children[#children] or parent_node
 
-  print("parent:", vim.inspect(parent))
-  print("target_node:", vim.inspect(target_node))
+  -- print("parent:", vim.inspect(parent))
+  -- print("target_node:", vim.inspect(target_node))
 
   -- The root itself has no content and has no extmark associated.
   -- If the target node is root, this also means there are no children
@@ -23,30 +24,38 @@ local function new_node_lineno(self, parent_node)
   -- The line where the new node should be placed is 0, the beginning
   -- of the document.
   if target_node == self.root then
-    print("target node is root")
+    -- print("target node is root")
+    -- print("returning default insert location for empty outline")
+    -- print("<<< new_node_lineno")
     return 0
   end
 
-  print("checking existing extmark")
+  -- print("checking existing extmark")
 
   -- We're trying to add some content "after" the target node.
   -- Find out which line it's on
   local position = vim.api.nvim_buf_get_extmark_by_id(self.buffer, namespace_id, target_node.extmark_id, {details = false})
-  print("last node position:")
-  print(vim.inspect(position))
+  -- print("last node position:")
+  -- print(vim.inspect(position))
 
-  return (position[1] or 0)+1
+  local padlines = 0
+  if(parent_node.depth == 0) then
+    padlines = 1
+  end
+
+  local result = (position[1] or 0)+1+padlines
+  -- print("New node lineno result:", result)
+  -- print("<<< new_node_lineno")
+  return result
 end
-
 
 function M.new(o_in)
   local o = o_in or {}
   o.root = o.root or {}
+  if o.root.depth == nil then
+    o.root.depth = 0
+  end
   o.root.children = o.root.children or {}
-  o.buffer = o.buffer or vim.api.nvim_create_buf(true, false)
-  api.nvim_buf_set_name(o.buffer, 'Gitabra')
-  api.nvim_buf_set_option(o.buffer, 'swapfile', false)
-  api.nvim_buf_set_option(o.buffer, 'buftype', 'nofile')
   setmetatable(o, M)
   return o
 end
@@ -55,6 +64,7 @@ end
 -- Add a `child_node` into the `parent_node`
 -- Return the added child node
 function M:add_node(parent_node, child_node)
+  -- print(">>> Add Node")
   -- Use the root node if a parent node is not specified
   if not parent_node then
     parent_node = self.root
@@ -68,16 +78,20 @@ function M:add_node(parent_node, child_node)
   local children = parent_node.children
   local last_child = children[#children]
 
-
+  -- print("looking to add:", child_node.heading_text)
   -- Put the child node text into the buffer
   local lineno = new_node_lineno(self, parent_node)
-  print("adding at line:", lineno)
- 	api.nvim_buf_set_lines(self.buffer, lineno, lineno, false, {child_node.heading_text or ""})
+  -- print("adding at line:", lineno)
+  u.buf_padlines_to(self.buffer, lineno)
+ 	api.nvim_buf_set_lines(self.buffer, lineno, lineno, true, {child_node.heading_text or ""})
 
   -- Add extmark at the same location
  	child_node.extmark_id = api.nvim_buf_set_extmark(self.buffer, namespace_id, lineno, 0, {})
 
+  child_node.depth = parent_node.depth + 1
+  child_node.lineno = lineno
   table.insert(parent_node.children, child_node)
+  -- print("<<< Add Node")
   return child_node
 end
 
