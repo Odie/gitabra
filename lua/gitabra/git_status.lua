@@ -33,9 +33,6 @@ local function status_info()
   local funcname = debug.getinfo(1, "n").name
   print("ENTERING", funcname)
 
-  -- local buf = vim.api.nvim_create_buf(true, false)
-  -- vim.api.nvim_set_current_buf(buf)
-
   local start = chronos.nanotime()
   local branch_j = git_get_branch()
   local branch_msg_j = git_branch_commit_msg()
@@ -109,6 +106,14 @@ end
 
 local function disable_custom_folding(win)
   vim.wo[win].foldmethod='manual'
+  vim.wo[win].foldexpr=''
+  vim.wo[win].foldtext=''
+end
+
+local function setup_keybinds(bufnr)
+  local function set_keymap(...) vim.api.nvim_buf_set_keymap(bufnr, ...) end
+  local opts = { noremap=true, silent=true }
+  set_keymap('n', '<tab>', 'za', opts)
 end
 
 local function setup_buffer()
@@ -118,6 +123,7 @@ local function setup_buffer()
   vim.bo[buf].buftype = 'nofile'
   -- vim.bo[buf].modifiable = false
   vim.bo[buf].filetype = 'GitabraStatus'
+  setup_keybinds(buf)
   return buf
 end
 
@@ -154,6 +160,7 @@ local function get_sole_status_screen()
 end
 
 local function get_fold_level(lineno)
+  lineno = lineno-1
   -- print("ENTERING git_status.get_fold_level: line", lineno)
 
   local sc = current_status_screen
@@ -162,6 +169,8 @@ local function get_fold_level(lineno)
   -- print("chk 1")
   -- print(vim.inspect(outline.root))
 
+  -- PERF WARNING?
+  -- This may be slow if the document being managed is somewhat large.
   local target_node = nil
   for node in u.table_depth_first_visit(outline.root) do
 
@@ -170,7 +179,7 @@ local function get_fold_level(lineno)
       -- print("node:", vim.inspect(node))
       local position = api.nvim_buf_get_extmark_by_id(sc.bufnr, outliner.namespace_id, node.extmark_id, {})
       -- print("chk 3:", vim.inspect(position))
-      if position[1] == lineno-1 then
+      if position[1] == lineno then
         target_node = node
         break
       end
@@ -181,9 +190,20 @@ local function get_fold_level(lineno)
 
   if target_node then
     -- print("node:", vim.inspect(target_node))
-    -- print("EXITING git_status.get_fold_level:", target_node.depth-1)
-    return target_node.depth
+
+    -- VIM wants to fold items of the same level together
+    -- This means, get VIM to show the heading and to fold
+    -- the rest of the child headings, both the parent heading
+    -- and the child heading should have the same fold level.
+    local depth = math.ceil(target_node.depth/2)
+    local text = api.nvim_buf_get_lines(sc.bufnr, lineno, lineno+1, false)[1]
+
+    print(string.format("(%i) [%i] %s", lineno, depth, text))
+
+    -- print("EXITING git_status.get_fold_level:", target_node.depth)
+    return depth
   else
+    print(string.format("(%i) [%i] %s", lineno, depth, ""))
     -- print("EXITING git_status.get_fold_level:", "default")
     return 0
   end
@@ -227,6 +247,7 @@ local function gitabra_status()
   -- inserts are done.
   disable_custom_folding(sc.winnr)
 
+  -- print( vim.inspect(info))
   if info.header then
     outline:add_node(nil, {heading_text = info.header})
   end
@@ -237,11 +258,31 @@ local function gitabra_status()
         id = "untracked",
     })
     for _, file in pairs(info.untracked) do
-      -- print("adding untracked: ", file.name)
       outline:add_node(section, {heading_text = file.name})
     end
   end
 
+  if #info.unstaged ~= 0 then
+    -- print( "adding unstaged files:", #info.unstaged )
+    local section = outline:add_node(nil, {
+        heading_text = "Unstaged",
+        id = "unstaged",
+    })
+    for _, file in pairs(info.unstaged) do
+      -- print("adding unstaged file:", file.name)
+      outline:add_node(section, {heading_text = file.name})
+    end
+  end
+
+  if #info.staged ~= 0 then
+    local section = outline:add_node(nil, {
+        heading_text = "Staged",
+        id = "Staged",
+    })
+    for _, file in pairs(info.staged) do
+      outline:add_node(section, {heading_text = file.name})
+    end
+  end
 
   local stop = chronos.nanotime()
   print(string.format("Outline completed: [%f]", stop-start))

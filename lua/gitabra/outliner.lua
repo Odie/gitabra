@@ -30,20 +30,30 @@ local function new_node_lineno(self, parent_node)
     return 0
   end
 
-  -- print("checking existing extmark")
+  -- print("checking existing extmarks")
 
   -- We're trying to add some content "after" the target node.
   -- Find out which line it's on
-  local position = vim.api.nvim_buf_get_extmark_by_id(self.buffer, namespace_id, target_node.extmark_id, {details = false})
-  -- print("last node position:")
-  -- print(vim.inspect(position))
+  local last_row = 0
+  for node in u.table_depth_first_visit(parent_node) do
+    if node.extmark_id ~= nil then
+      -- print("visiting node:", vim.inspect(node))
+      local position = api.nvim_buf_get_extmark_by_id(self.buffer, namespace_id, node.extmark_id, {})
+
+      -- print("position for node is:", vim.inspect(position))
+      last_row = math.max(last_row, position[1])
+      -- print("new last row:", last_row)
+    end
+  end
+
+  -- print("last row:", last_row)
 
   local padlines = 0
   if(parent_node.depth == 0) then
     padlines = 1
   end
 
-  local result = (position[1] or 0)+1+padlines
+  local result = last_row + 1 + padlines
   -- print("New node lineno result:", result)
   -- print("<<< new_node_lineno")
   return result
@@ -78,10 +88,10 @@ function M:add_node(parent_node, child_node)
   local children = parent_node.children
   local last_child = children[#children]
 
-  -- print("looking to add:", child_node.heading_text)
+  -- print(">>>>>>>>>>>>>>>>>>>>>>> looking to add:", child_node.heading_text)
   -- Put the child node text into the buffer
   local lineno = new_node_lineno(self, parent_node)
-  -- print("adding at line:", lineno)
+  -- print("****** [extmark & content] adding at line:", lineno)
   u.buf_padlines_to(self.buffer, lineno)
  	api.nvim_buf_set_lines(self.buffer, lineno, lineno, true, {child_node.heading_text or ""})
 
