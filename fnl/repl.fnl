@@ -3,7 +3,10 @@
             st gitabra.git_status
             job gitabra.job
             outliner gitabra.outliner
-            nvim aniseed.nvim}})
+            nvim aniseed.nvim
+            lpeg lpeg
+            patch_parser gitabra.patch_parser
+            }})
 
 (def api vim.api)
 
@@ -84,4 +87,6 @@
 
   vim
 
+  (def t (u.system_async "git diff"))
+  (patch_parser.parse_patch (. t.output 1))
 )

@@ -13,36 +13,41 @@ end
 -- `output` table stores the output of the executed command
 -- `job` field contains a `gitabra.job` object used to run the command
 --
-local function system_async(cmd)
+local function system_async(cmd, opt)
   local result = {
     output = {},
     done = false
   }
+  opt = opt or {}
 
 	local j = job.new({
-			cmd = cmd,
-    	on_stdout = function(_, err, data)
-      	if err then
-        	print("ERROR: "..err)
-      	end
-      	if data then
-      	  for line in lines(data) do
-       	    table.insert(result.output, line)
-        	end
-      	end
-    	end,
-    	on_exit = function(_, _, _)
-    	  result.done = true
-    	  result.stop_time = chronos.nanotime()
-    	  result.elapsed_time = result.stop_time - result.start_time
-    	end
-  	})
+      cmd = cmd,
+      on_stdout = function(_, err, data)
+        if err then
+          print("ERROR: "..err)
+        end
+        if data then
+          if opt.splitlines then
+            for line in lines(data) do
+              table.insert(result.output, line)
+            end
+          else
+            table.insert(result.output, data)
+          end
+        end
+      end,
+      on_exit = function(_, _, _)
+        result.done = true
+        result.stop_time = chronos.nanotime()
+        result.elapsed_time = result.stop_time - result.start_time
+      end
+    })
 
   result.start_time = chronos.nanotime()
-	j:start()
+  j:start()
 
-	result.job = j
-	return result
+  result.job = j
+  return result
 end
 
 local function table_lazy_get(table, key, default)
@@ -228,6 +233,7 @@ local function buf_padlines_to(buf, lineno)
 end
 
 return {
+  lines = lines,
   system_async = system_async,
   node_from_path = node_from_path,
   path_from_node = path_from_node,

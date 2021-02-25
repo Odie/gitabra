@@ -5,17 +5,20 @@ local outliner = require("gitabra.outliner")
 local api = vim.api
 
 local function git_get_branch()
-  return u.system_async('git branch --show-current')
+  return u.system_async('git branch --show-current', {splitlines=true})
 end
 
 local function git_branch_commit_msg()
-  return u.system_async({"git", "show", "--no-patch", "--format='%h %s'"})
+  return u.system_async({"git", "show", "--no-patch", "--format='%h %s'"}, {splitlines=true})
 end
 
 local function git_status()
-  return u.system_async("git status --porcelain")
+  return u.system_async("git status --porcelain", {splitlines=true})
 end
 
+local function git_diff()
+  return u.system_async("git diff")
+end
 
 local function status_letter_name(letter)
   if "M" == letter then return "modified"
@@ -166,27 +169,19 @@ local function get_fold_level(lineno)
   local sc = current_status_screen
   local outline = sc.outline
 
-  -- print("chk 1")
-  -- print(vim.inspect(outline.root))
-
   -- PERF WARNING?
   -- This may be slow if the document being managed is somewhat large.
   local target_node = nil
   for node in u.table_depth_first_visit(outline.root) do
 
     if node.extmark_id then
-      -- print("chk 2:", node.extmark_id)
-      -- print("node:", vim.inspect(node))
       local position = api.nvim_buf_get_extmark_by_id(sc.bufnr, outliner.namespace_id, node.extmark_id, {})
-      -- print("chk 3:", vim.inspect(position))
       if position[1] == lineno then
         target_node = node
         break
       end
     end
   end
-
-  -- print("chk 4")
 
   if target_node then
     -- print("node:", vim.inspect(target_node))
