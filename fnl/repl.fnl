@@ -63,20 +63,6 @@
 
   outline
 
-  (do
-    (outline:add_node nil {:heading_text "first heading!"
-                           :id "status header"})
-    (outline:add_node nil {:heading_text "Untracked files"
-                           :id "untracked"})
-    (outline:add_node nil {:heading_text "Unstaged changes"
-                           :id "unstaged"})
-    (outline:add_node nil {:heading_text "Staged changes"
-                           :id "staged"})
-    (outline:add_node nil {:heading_text "Recent commits"
-                           :id "recent"})
-  )
-
-
   (outline:node_by_id "status header")
 
   (outline:close)
@@ -89,4 +75,6 @@
 
   (def t (u.system_async "git diff"))
   (patch_parser.parse_patch (. t.output 1))
+
+  (st.hunk_infos)
 )

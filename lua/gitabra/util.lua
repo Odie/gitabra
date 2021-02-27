@@ -7,6 +7,14 @@ local function lines(str)
   return str:gmatch("[^\r\n]+")
 end
 
+local function lines_array(str)
+  local result = {}
+  for line in lines(str) do
+    table.insert(result, line)
+  end
+  return result
+end
+
 -- Execute the given command asynchronously
 -- Returns a `results` table.
 -- `done` field indicates if the job has finished running
@@ -234,6 +242,7 @@ end
 
 return {
   lines = lines,
+  lines_array = lines_array,
   system_async = system_async,
   node_from_path = node_from_path,
   path_from_node = path_from_node,

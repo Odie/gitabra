@@ -104,8 +104,14 @@ local function patch_locate_headers(patch_text)
   return process_entries(next_diff + next_hunk)
 end
 
-local function parse_patch(patch_text)
+-- Given the patch as text, return a collection that describes
+-- the contained file diffs and hunks.
+local function patch_info(patch_text)
   local text = patch_text
+  if text == nil then
+    return {}
+  end
+
   local headers = patch_locate_headers(patch_text)
   local result = {}
   for i, diff_header in ipairs(headers) do
@@ -122,7 +128,6 @@ local function parse_patch(patch_text)
     else
       diff.content_end = #patch_text
     end
-    -- diff.text = string.sub(text, diff.content_start, diff.content_end)
 
     for j, hunk_header in ipairs(diff_header.hunks) do
       local hunk = {
@@ -139,11 +144,23 @@ local function parse_patch(patch_text)
       -- hunk.text = string.sub(text, hunk.content_start, hunk.content_end)
     end
   end
+
   return result
+end
+
+-- Given the an output from `patch_info`,
+-- return a file diff entry that matches given `filepath`
+local function find_file(infos, filepath)
+  for _, hunk in ipairs(infos) do
+    if hunk.b_file == filepath then
+      return hunk
+    end
+  end
 end
 
 return {
   hunk_indices = hunk_indices,
   diff_indices = diff_indices,
-  parse_patch = parse_patch,
+  patch_info = patch_info,
+  find_file = find_file,
 }

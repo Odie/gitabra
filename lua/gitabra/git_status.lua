@@ -3,6 +3,7 @@ local chronos = require("chronos")
 local job = require("gitabra.job")
 local outliner = require("gitabra.outliner")
 local api = vim.api
+local patch_parser = require("gitabra.patch_parser")
 
 local function git_get_branch()
   return u.system_async('git branch --show-current', {splitlines=true})
@@ -16,8 +17,12 @@ local function git_status()
   return u.system_async("git status --porcelain", {splitlines=true})
 end
 
-local function git_diff()
+local function git_diff_unstaged()
   return u.system_async("git diff")
+end
+
+local function git_diff_staged()
+  return u.system_async("git diff --cached")
 end
 
 local function status_letter_name(letter)
@@ -34,7 +39,7 @@ end
 
 local function status_info()
   local funcname = debug.getinfo(1, "n").name
-  print("ENTERING", funcname)
+  print(">>", funcname)
 
   local start = chronos.nanotime()
   local branch_j = git_get_branch()
@@ -85,14 +90,52 @@ local function status_info()
   stop = chronos.nanotime()
   print(string.format("Info reorg completed [%f]", stop-start))
 
-  print("EXITING", funcname)
+  local commit_msg = branch_msg_j.output[1]
+  commit_msg = commit_msg and commit_msg:sub(2, -2) or "No commits yet"
+
+  print("<<", funcname)
+
   return {
-    header = string.format("[%s] %s", branch_j.output[1], branch_msg_j.output[1]:sub(2, -2)),
+    header = string.format("[%s] %s", branch_j.output[1], commit_msg),
     files = files,
     untracked = untracked,
     staged = staged,
     unstaged = unstaged,
   }
+end
+
+local function hunk_infos()
+  local funcname = debug.getinfo(1, "n").name
+  print(">>", funcname)
+
+  local start = chronos.nanotime()
+  local unstaged_j = git_diff_unstaged()
+  local staged_j = git_diff_staged()
+
+  local jobs = {unstaged_j, staged_j}
+  local wait_result = job.wait_all(1000, jobs)
+  if not wait_result then
+    error(string.format("%s: unable to complete git commands withint alotted time", funcname))
+  end
+  local stop = chronos.nanotime()
+  print(string.format("git commands completed [%f]", stop-start))
+
+  start = chronos.nanotime()
+  local info = {
+    unstaged = {
+      patch_info = patch_parser.patch_info(unstaged_j.output[1]),
+      patch_text = unstaged_j.output[1],
+    },
+    staged = {
+      patch_info = patch_parser.patch_info(staged_j.output[1]),
+      patch_text = staged_j.output[1],
+    }
+  }
+  stop = chronos.nanotime()
+  print(string.format("Patch parsing completed [%f]", stop-start))
+
+  print("<<", funcname)
+  return info
 end
 
 local function setup_window()
@@ -164,7 +207,10 @@ end
 
 local function get_fold_level(lineno)
   lineno = lineno-1
-  -- print("ENTERING git_status.get_fold_level: line", lineno)
+  local dl = 1
+  if dl >= 2 then
+    print(">>> git_status.get_fold_level: line", lineno)
+  end
 
   local sc = current_status_screen
   local outline = sc.outline
@@ -176,7 +222,12 @@ local function get_fold_level(lineno)
 
     if node.extmark_id then
       local position = api.nvim_buf_get_extmark_by_id(sc.bufnr, outliner.namespace_id, node.extmark_id, {})
-      if position[1] == lineno then
+      local start = position[1]
+      local stop = start + #node.text
+      if start <= lineno and lineno < stop then
+        if dl >= 2 then
+          print("lineno", lineno, "matched node going from", start, stop)
+        end
         target_node = node
         break
       end
@@ -184,22 +235,33 @@ local function get_fold_level(lineno)
   end
 
   if target_node then
-    -- print("node:", vim.inspect(target_node))
+    if dl >= 3 then
+      print("node:", vim.inspect(target_node))
+    end
 
     -- VIM wants to fold items of the same level together
     -- This means, get VIM to show the heading and to fold
     -- the rest of the child headings, both the parent heading
     -- and the child heading should have the same fold level.
     local depth = math.ceil(target_node.depth/2)
+    -- local depth = target_node.depth
     local text = api.nvim_buf_get_lines(sc.bufnr, lineno, lineno+1, false)[1]
 
-    print(string.format("(%i) [%i] %s", lineno, depth, text))
+    if dl >=1 then
+      print(string.format("(%i) [%i] %s", lineno, depth, text))
+    end
 
-    -- print("EXITING git_status.get_fold_level:", target_node.depth)
+    if dl >=2 then
+      print("<<< git_status.get_fold_level:", target_node.depth)
+    end
     return depth
   else
-    print(string.format("(%i) [%i] %s", lineno, depth, ""))
-    -- print("EXITING git_status.get_fold_level:", "default")
+    if dl >= 1 then
+      print(string.format("(%i) [%i] %s", lineno, depth, ""))
+    end
+    if dl >= 2 then
+      print("<<< git_status.get_fold_level:", "default")
+    end
     return 0
   end
 end
@@ -213,11 +275,33 @@ local function get_fold_text()
   return string.format("%s (%i)", text, count)
 end
 
+local function populate_hunks(outline, parent_node, patch_info, filepath)
+  local diff = patch_parser.find_file(patch_info.patch_info, filepath)
+  -- print("looking for path:", vim.inspect(filepath))
+  -- print("in:", vim.inspect(patch_info))
+  -- print("found diff:", vim.inspect(diff))
+  if diff then
+    for _, hunk in ipairs(diff.hunks) do
+      -- Add hunk header as its own node
+      -- These look something like "@@ -16,10 +17,14 @@"
+      local heading = outline:add_node(parent_node, {
+          text = hunk.header_text,
+        })
+
+      -- Add the content of the hunk
+      outline:add_node(heading, {
+          text = string.sub(patch_info.patch_text, hunk.content_start, hunk.content_end)
+        })
+    end
+  end
+end
+
 local function gitabra_status()
 
   local funcname = debug.getinfo(1, "n").name
   print("ENTERING", funcname)
-  local info = status_info()
+  local st_info = status_info()
+  local hk_info = hunk_infos()
 
   local sc = get_sole_status_screen()
 
@@ -243,39 +327,42 @@ local function gitabra_status()
   disable_custom_folding(sc.winnr)
 
   -- print( vim.inspect(info))
-  if info.header then
-    outline:add_node(nil, {heading_text = info.header})
+  if st_info.header then
+    outline:add_node(nil, {text = st_info.header})
   end
 
-  if #info.untracked ~= 0 then
+  if #st_info.untracked ~= 0 then
     local section = outline:add_node(nil, {
-        heading_text = "Untracked",
+        text = "Untracked",
         id = "untracked",
     })
-    for _, file in pairs(info.untracked) do
-      outline:add_node(section, {heading_text = file.name})
+    for _, file in pairs(st_info.untracked) do
+      outline:add_node(section, {text = file.name})
     end
   end
 
-  if #info.unstaged ~= 0 then
-    -- print( "adding unstaged files:", #info.unstaged )
+  print("Adding Unstaged entries")
+  if #st_info.unstaged ~= 0 then
+    -- print( "adding unstaged files:", #st_info.unstaged )
     local section = outline:add_node(nil, {
-        heading_text = "Unstaged",
+        text = "Unstaged",
         id = "unstaged",
     })
-    for _, file in pairs(info.unstaged) do
-      -- print("adding unstaged file:", file.name)
-      outline:add_node(section, {heading_text = file.name})
+    for _, file in pairs(st_info.unstaged) do
+      local filename_node = outline:add_node(section, {text = file.name})
+      populate_hunks(outline, filename_node, hk_info.unstaged, file.name)
     end
   end
 
-  if #info.staged ~= 0 then
+  print("Adding Staged entries")
+  if #st_info.staged ~= 0 then
     local section = outline:add_node(nil, {
-        heading_text = "Staged",
+        text = "Staged",
         id = "Staged",
     })
-    for _, file in pairs(info.staged) do
-      outline:add_node(section, {heading_text = file.name})
+    for _, file in pairs(st_info.staged) do
+      local filename_node = outline:add_node(section, {text = file.name})
+      populate_hunks(outline, filename_node, hk_info.staged, file.name)
     end
   end
 
@@ -294,6 +381,7 @@ end
 
 return {
   status_info = status_info,
+  hunk_infos = hunk_infos,
   gitabra_status = gitabra_status,
   get_fold_level = get_fold_level,
   get_fold_text = get_fold_text,
