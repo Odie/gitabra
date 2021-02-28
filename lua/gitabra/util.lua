@@ -100,6 +100,10 @@ local function table_get_last(t)
   return t[#t]
 end
 
+local function table_clone(t)
+  return {table.unpack(org)}
+end
+
 
 -- Given a `root` and the `target_node` we're looking for,
 -- Return the path of the first occurance of the node.
@@ -249,5 +253,9 @@ return {
   table_depth_first_visit = table_depth_first_visit,
   table_lazy_get = table_lazy_get,
   table_find_node = table_find_node,
+  table_push = table_push,
+  table_pop = table_pop,
+  table_get_last = table_get_last,
+  table_clone = table_clone,
   buf_padlines_to = buf_padlines_to,
 }

@@ -5,9 +5,10 @@
             outliner gitabra.outliner
             nvim aniseed.nvim
             lpeg lpeg
-            patch_parser gitabra.patch_parser
+            zipper gitabra.zipper
             }})
 
+            ; patch_parser gitabra.patch_parser
 (def api vim.api)
 
 (def plugin_name "gitabra")
@@ -77,4 +78,69 @@
   (patch_parser.parse_patch (. t.output 1))
 
   (st.hunk_infos)
+
+  ;; Excercises the `next` function of the zipper api
+  (let [root {:id :root
+              :children [{:id :c1
+                          :children [{:id :c1-c1}
+                                     {:id :c1-c2}
+                                     {:id :c1-c3}]}
+                         {:id :c2
+                          :children [{:id :c2-c1}
+                                     {:id :c2-c2}
+                                     {:id :c2-c3}]}
+                         {:id :c3
+                          :children [{:id :c3-c1}
+                                     {:id :c3-c2}
+                                     {:id :c3-c3}]}]}
+        z (zipper.new root :children)
+        cur_path (fn [z]
+                     (let [r {}]
+                       (each [_ node (ipairs z.path)]
+                         (u.table_push r node.id))
+                       r))]
+    (while (not (z:at_end))
+      (z:next)
+      (print (vim.inspect (cur_path z))))
+
+    (print "is at end?" (z:at_end))
+    (z:remove_end_marker)
+    z)
+
+  ;; Excercises the `next` in such a way as to prune certain branches from
+  ;; a basic depth first traversal
+  (let [root {:id :root
+              :children [{:id :c1
+                          :children [{:id :c1-c1}
+                                     {:id :c1-c2}
+                                     {:id :c1-c3}]}
+                         {:id :c2
+                          :do-not-visit true
+                          :children [{:id :c2-c1}
+                                     {:id :c2-c2}
+                                     {:id :c2-c3}]}
+                         {:id :c3
+                          :children [{:id :c3-c1}
+                                     {:id :c3-c2}
+                                     {:id :c3-c3}]}]}
+        z (zipper.new root :children)
+        cur_path (fn [z]
+                     (let [r {}]
+                       (each [_ node (ipairs z.path)]
+                         (u.table_push r node.id))
+                       r))]
+    (while (not (z:at_end))
+      (let [node (z:node)]
+        (if (. node :do-not-visit)
+          (do
+            (z:right)
+            (print "skipping node:" (. node :id)))
+          (do
+            (print (vim.inspect (cur_path z)))
+            (tset node :visited true)
+            (z:next)))))
+
+    (print "is at end?" (z:at_end))
+    (z:remove_end_marker)
+    z)
 )

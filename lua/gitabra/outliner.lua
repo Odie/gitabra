@@ -48,8 +48,8 @@ local function new_node_lineno(self, parent_node)
     end
   end
 
-  print("matched node:", vim.inspect(matched_node))
-  print("last row:", last_row, last_row+#matched_node.text)
+  -- print("matched node:", vim.inspect(matched_node))
+  -- print("last row:", last_row, last_row+#matched_node.text)
 
   local padlines = 0
   if(parent_node.depth == 0) then

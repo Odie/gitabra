@@ -324,11 +324,11 @@ local function gitabra_status()
   -- This means that each time we're adding new content to the outline,
   -- we should disable the folding and re-enable it after all the
   -- inserts are done.
-  disable_custom_folding(sc.winnr)
+  -- disable_custom_folding(sc.winnr)
 
   -- print( vim.inspect(info))
   if st_info.header then
-    outline:add_node(nil, {text = st_info.header})
+    outline:add_node(nil, {text = string.format("Head:    %s", st_info.header)})
   end
 
   if #st_info.untracked ~= 0 then
@@ -373,7 +373,7 @@ local function gitabra_status()
   -- `get_fold_level` will be called by nvim as nodes are added to the outline.
   -- The global sc is the only way that function can find the currently active outline.
   sc.outline = outline
-  enable_custom_folding(sc.winnr)
+  -- enable_custom_folding(sc.winnr)
   --------------------------------------------------------------------
   local stop = chronos.nanotime()
   print("EXITING", funcname)
