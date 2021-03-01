@@ -45,6 +45,9 @@ local function system_async(cmd, opt)
         end
       end,
       on_exit = function(_, _, _)
+        if opt.merge_output and #result.output > 1 then
+          result.output = { table.concat(result.output) }
+        end
         result.done = true
         result.stop_time = chronos.nanotime()
         result.elapsed_time = result.stop_time - result.start_time
@@ -92,6 +95,8 @@ local function node_from_path(root, path)
 
   return cursor
 end
+
+local get_in = node_from_path
 
 -- Alias for better code clarity
 local table_push = table.insert
@@ -159,7 +164,7 @@ local function path_from_node(root, target_node)
 end
 
 
-local function table_depth_first_visit(root_table)
+local function table_depth_first_visit(root_table, children_fieldname)
   local stack = {}
 
   table_push(stack, {
@@ -186,7 +191,14 @@ local function table_depth_first_visit(root_table)
     -- Grab the iterator for the current node
     local iter = node.iter
     if not node.iter then
-      node.iter = {pairs(node.node)}
+      local children
+      if children_fieldname then
+        children = node.node[children_fieldname]
+      else
+        children = node.node
+      end
+
+      node.iter = {pairs(children)}
       -- We should get back a function `f`, an invariant `s`, and a control variable `v`
 
       iter = node.iter
@@ -194,7 +206,6 @@ local function table_depth_first_visit(root_table)
 
     -- Grab a child node
     while true do
-      -- local k, next_node = iter(node.node)
       local k, next_node = iter[1](iter[2], iter[3]) -- f(s, v)
       iter[3] = k -- update the control var to prep for next iteration
 
@@ -244,11 +255,74 @@ local function buf_padlines_to(buf, lineno)
   end
 end
 
+local function partition(table, tuple_size, step)
+  local result = {}
+
+  if not step then
+    step = tuple_size
+  end
+
+  for i = 1, #table-tuple_size+1, step do
+    local tuple = {}
+    for j = 0, tuple_size-1 do
+      table_push(tuple, table[i+j])
+    end
+    table_push(result, tuple)
+  end
+  return result
+end
+
+local function partition_iterator(table, tuple_size, step)
+  local t_size = #table
+  if not step then
+    step = tuple_size
+  end
+  local v = 1-step
+
+  return function()
+    v = v+step
+    local end_idx = v + tuple_size-1
+
+    -- Can we construct more tuples starting from the requested position?
+    if end_idx > t_size then
+      return nil
+    end
+
+    -- If so, grab all items into a tupe and return it unpacked
+    local result = {}
+    for i = v, end_idx do
+      table_push(result, table[i])
+    end
+    return unpack(result)
+  end
+end
+
+-- Returns a new table with that contains all items where the predicate returned true
+local function filter(table, pred)
+  local result = {}
+  for _, v in ipairs(table) do
+    if pred(v) then
+      table_push(result, v)
+    end
+  end
+  return result
+end
+
+-- Applies `func` to each value in the table
+-- Note that this alters the values in-place
+local function map(table, func)
+  for i, v in ipairs(table) do
+    table[i] = func(v)
+  end
+  return table
+end
+
 return {
   lines = lines,
   lines_array = lines_array,
   system_async = system_async,
   node_from_path = node_from_path,
+  get_in = node_from_path,
   path_from_node = path_from_node,
   table_depth_first_visit = table_depth_first_visit,
   table_lazy_get = table_lazy_get,
@@ -258,4 +332,8 @@ return {
   table_get_last = table_get_last,
   table_clone = table_clone,
   buf_padlines_to = buf_padlines_to,
+  partition = partition,
+  partition_iterator = partition_iterator,
+  filter = filter,
+  map = map,
 }

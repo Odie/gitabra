@@ -6,6 +6,7 @@
             nvim aniseed.nvim
             lpeg lpeg
             zipper gitabra.zipper
+            chronos chronos
             }})
 
             ; patch_parser gitabra.patch_parser
@@ -44,7 +45,8 @@
   (do
     (api.nvim_command ":message clear")
     (cleanup-buffer "GitabraStatus")
-    (st.gitabra_status))
+    (st.gitabra_status)
+    )
 
   (st.get_sole_status_screen)
 
@@ -143,4 +145,99 @@
     (print "is at end?" (z:at_end))
     (z:remove_end_marker)
     z)
+
+  (let [root {:id :root
+              :children [{:id :c1
+                          :children [{:id :c1-c1}
+                                     {:id :c1-c2}
+                                     {:id :c1-c3}]}
+                         {:id :c2
+                          :do-not-visit true
+                          :children [{:id :c2-c1}
+                                     {:id :c2-c2}
+                                     {:id :c2-c3}]}
+                         {:id :c3
+                          :children [{:id :c3-c1}
+                                     {:id :c3-c2}
+                                     {:id :c3-c3}]}]}
+        z (zipper.new root :children)
+        cur_path (fn [z]
+                     (let [r {}]
+                       (each [_ node (ipairs z.path)]
+                         (u.table_push r node.id))
+                       r))]
+    (z:down)
+
+
+    (print "is at end?" (z:at_end))
+    (z:remove_end_marker)
+    ; (cur_path z)
+    (z:parent_node)
+    )
+
+
+  (let [root (u.get_in (st.get_sole_status_screen) [:outline :root])
+        z (zipper.new root "children")
+        cur_path (fn [z]
+                     (let [r {}]
+                       (each [_ node (ipairs z.path)]
+                         (u.table_push r (or node.id node.text)))
+                       r))]
+
+    (while (not (z:at_end))
+      (print (vim.inspect (cur_path z)))
+      (z:next)
+      )
+
+    (print "is at end?" (z:at_end))
+    (z:remove_end_marker)
+    ; (cur_path z)
+    ; z
+    )
+
+  (let [outline (u.get_in (st.get_sole_status_screen) [:outline])
+        z (zipper.new outline.root "children")
+        ]
+    ; (outline:node_zipper_at_lineno 0)
+    (z:down)
+    z
+    )
+
+  (let [outline (u.get_in (st.get_sole_status_screen) [:outline])
+        start (chronos.nanotime)
+        z (outline:node_zipper_at_lineno 9)
+        stop (chronos.nanotime)
+        ]
+    (if z
+      (do
+        (print (string.format "elapsed [%f]" (- stop start)))
+        (z:node))
+      (print "node_zipper_at_lineno returned nil!")
+      )
+    )
+
+  (let [outline (u.get_in (st.get_sole_status_screen) [:outline])
+        node (u.get_in outline [:root :children 2])
+        ]
+    (tset node :collapsed true)
+    node
+    (outline:refresh)
+    )
+
+  (let [outline (u.get_in (st.get_sole_status_screen) [:outline])
+        z (zipper.new outline.root "children") ]
+
+    (z:next)
+    (z:next)
+    (z:next)
+    (z:next)
+    (z:children)
+    )
+
+  (st.get_sole_status_screen)
+
+  (let [outline (u.get_in (st.get_sole_status_screen) [:outline]) ]
+    (outline:refresh)
+    )
+
 )

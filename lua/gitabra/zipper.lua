@@ -57,10 +57,25 @@ end
 function M:down()
   local cs = self:children()
 
-  if cs and #cs > 1 then
+  if cs and #cs >= 1 then
     u.table_push(self.path, cs[1])
     u.table_push(self.path_idxs, 1)
     return true
+  end
+  return false
+end
+
+-- Navigate to the given child `child_node`.
+-- This will only work if the child node is actually a child of the current node.
+-- Returns true if navigation succeeded
+function M:to_child_node(child_node)
+  local cs = self:children()
+  for i, c in ipairs(cs) do
+    if c == child_node then
+      u.table_push(self.path, c)
+      u.table_push(self.path_idxs, i)
+      return true
+    end
   end
   return false
 end
@@ -128,9 +143,18 @@ function M:node()
   return u.table_get_last(self.path)
 end
 
+function M:parent_node()
+  local target_idx = #self.path-1
+  if target_idx < 1 then
+    return nil
+  else
+    return self.path[target_idx]
+  end
+end
+
 -- Returns if the path is indicating it is at an and of a depth first traversal
 function M:at_end()
-  if self.path[2] == "end" and self.path_idxs[2] == -1 then
+  if #self.path >= 2 and self.path[2] == "end" and self.path_idxs[2] == -1 then
     return true
   else
     return false
@@ -168,6 +192,18 @@ function M:next()
     return true
   end
 
+  return self:next_up_right()
+end
+
+-- Moves to the next valid item by try `up` and `right` continuously
+--
+-- This is part of the behavior of `next`.
+-- It's included here to make it easier to replicate a next-like
+-- movement.
+--
+-- This is useful, for example, when trying to perform a dfs visit,
+-- but reject going down certain branches altogether.
+function M:next_up_right()
   -- Move up the tree while trying to go right
   -- Here, we either end up finding some ancestor node where
   -- moving right succeeded...

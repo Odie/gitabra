@@ -18,11 +18,11 @@ local function git_status()
 end
 
 local function git_diff_unstaged()
-  return u.system_async("git diff")
+  return u.system_async("git diff", {merge_output=true})
 end
 
 local function git_diff_staged()
-  return u.system_async("git diff --cached")
+  return u.system_async("git diff --cached", {merge_output=true})
 end
 
 local function status_letter_name(letter)
@@ -141,25 +141,15 @@ end
 local function setup_window()
   api.nvim_command("split")
   local win = api.nvim_get_current_win()
+  vim.wo[win].number = false
+  vim.wo[win].relativenumber = false
   return win
-end
-
-local function enable_custom_folding(win)
-  vim.wo[win].foldmethod='expr'
-  vim.wo[win].foldexpr='gitabra#foldexpr()'
-  vim.wo[win].foldtext='gitabra#foldtext()'
-end
-
-local function disable_custom_folding(win)
-  vim.wo[win].foldmethod='manual'
-  vim.wo[win].foldexpr=''
-  vim.wo[win].foldtext=''
 end
 
 local function setup_keybinds(bufnr)
   local function set_keymap(...) vim.api.nvim_buf_set_keymap(bufnr, ...) end
   local opts = { noremap=true, silent=true }
-  set_keymap('n', '<tab>', 'za', opts)
+  set_keymap('n', '<tab>', '<cmd>lua require("gitabra.git_status").toggle_fold_at_current_line()<cr>', opts)
 end
 
 local function setup_buffer()
@@ -205,74 +195,40 @@ local function get_sole_status_screen()
   return current_status_screen
 end
 
-local function get_fold_level(lineno)
-  lineno = lineno-1
-  local dl = 1
-  if dl >= 2 then
-    print(">>> git_status.get_fold_level: line", lineno)
-  end
+local function toggle_fold_at_current_line()
+  local lineno = vim.fn.line(".") - 1
+  local outline = get_sole_status_screen().outline
+  if outline then
+    local z = outline:node_zipper_at_lineno(lineno)
+    if z then
+      -- print("picked node:", vim.inspect(z:node()))
+      local node
 
-  local sc = current_status_screen
-  local outline = sc.outline
-
-  -- PERF WARNING?
-  -- This may be slow if the document being managed is somewhat large.
-  local target_node = nil
-  for node in u.table_depth_first_visit(outline.root) do
-
-    if node.extmark_id then
-      local position = api.nvim_buf_get_extmark_by_id(sc.bufnr, outliner.namespace_id, node.extmark_id, {})
-      local start = position[1]
-      local stop = start + #node.text
-      if start <= lineno and lineno < stop then
-        if dl >= 2 then
-          print("lineno", lineno, "matched node going from", start, stop)
-        end
-        target_node = node
-        break
+      -- Which node do we actually want to collapse?
+      -- If the user is targetting a leaf node, like the
+      -- contents of a hunk, that node itself cannot be
+      -- collapsed. Instead, we're going to collapse it's
+      -- parent/header.
+      if not z:has_children() then
+        -- print("is leaf")
+        node = z:parent_node()
+      else
+        -- print("has children")
+        node = z:node()
       end
+      node.collapsed = not node.collapsed
+
+      -- print("node altered:", vim.inspect(node))
+
+      -- Rebuild the buffer from scratch
+      outline:refresh()
+
+      -- Move the cursor to whatever we've just collapsed
+      -- All visible node's lineno should have been updated,
+      -- so we can just use the contents of that field directly
+      api.nvim_command(tostring(node.lineno+1))
     end
   end
-
-  if target_node then
-    if dl >= 3 then
-      print("node:", vim.inspect(target_node))
-    end
-
-    -- VIM wants to fold items of the same level together
-    -- This means, get VIM to show the heading and to fold
-    -- the rest of the child headings, both the parent heading
-    -- and the child heading should have the same fold level.
-    local depth = math.ceil(target_node.depth/2)
-    -- local depth = target_node.depth
-    local text = api.nvim_buf_get_lines(sc.bufnr, lineno, lineno+1, false)[1]
-
-    if dl >=1 then
-      print(string.format("(%i) [%i] %s", lineno, depth, text))
-    end
-
-    if dl >=2 then
-      print("<<< git_status.get_fold_level:", target_node.depth)
-    end
-    return depth
-  else
-    if dl >= 1 then
-      print(string.format("(%i) [%i] %s", lineno, depth, ""))
-    end
-    if dl >= 2 then
-      print("<<< git_status.get_fold_level:", "default")
-    end
-    return 0
-  end
-end
-
-local function get_fold_text()
-  local sc = current_status_screen
-  local foldstart = vim.v.foldstart-1
-  local foldend = vim.v.foldend-1
-  local text = api.nvim_buf_get_lines(sc.bufnr, foldstart, foldstart+1, false)[1]
-  local count = foldend-foldstart
-  return string.format("%s (%i)", text, count)
 end
 
 local function populate_hunks(outline, parent_node, patch_info, filepath)
@@ -297,9 +253,10 @@ local function populate_hunks(outline, parent_node, patch_info, filepath)
 end
 
 local function gitabra_status()
-
   local funcname = debug.getinfo(1, "n").name
-  print("ENTERING", funcname)
+  print(">>>", funcname)
+  local fn_start = chronos.nanotime()
+
   local st_info = status_info()
   local hk_info = hunk_infos()
 
@@ -324,7 +281,6 @@ local function gitabra_status()
   -- This means that each time we're adding new content to the outline,
   -- we should disable the folding and re-enable it after all the
   -- inserts are done.
-  -- disable_custom_folding(sc.winnr)
 
   -- print( vim.inspect(info))
   if st_info.header then
@@ -347,6 +303,7 @@ local function gitabra_status()
     local section = outline:add_node(nil, {
         text = "Unstaged",
         id = "unstaged",
+        padlines_before = 1,
     })
     for _, file in pairs(st_info.unstaged) do
       local filename_node = outline:add_node(section, {text = file.name})
@@ -358,7 +315,8 @@ local function gitabra_status()
   if #st_info.staged ~= 0 then
     local section = outline:add_node(nil, {
         text = "Staged",
-        id = "Staged",
+        id = "staged",
+        padlines_before = 1,
     })
     for _, file in pairs(st_info.staged) do
       local filename_node = outline:add_node(section, {text = file.name})
@@ -373,10 +331,15 @@ local function gitabra_status()
   -- `get_fold_level` will be called by nvim as nodes are added to the outline.
   -- The global sc is the only way that function can find the currently active outline.
   sc.outline = outline
-  -- enable_custom_folding(sc.winnr)
   --------------------------------------------------------------------
-  local stop = chronos.nanotime()
-  print("EXITING", funcname)
+
+  start = chronos.nanotime()
+  outline:refresh()
+  stop = chronos.nanotime()
+  print(string.format("Outline refresh completed: [%f]", stop-start))
+
+  local fn_stop = chronos.nanotime()
+  print(string.format("<<< %s [%f]", funcname, fn_stop-fn_start))
 end
 
 return {
@@ -387,24 +350,5 @@ return {
   get_fold_text = get_fold_text,
   setup_window_and_buffer = setup_window_and_buffer,
   get_sole_status_screen = get_sole_status_screen,
+  toggle_fold_at_current_line = toggle_fold_at_current_line,
 }
-
---------------------------
--- Old Snippet
---
--- Setup a job to stream the contents of git-status to a new buffer
--- local buf = vim.api.nvim_create_buf(true, false)
--- local j = job:new({
--- 		cmd = "git status",
---   	on_stdout = function(self, err, data)
---     	if err then
---       	print("ERROR: "..err)
---     	end
---     	if data then
---       	for s in lines(data) do
---         	vim.api.nvim_buf_set_lines(buf, -1, -1, false, {s})
---       	end
---     	end
---   	end,
--- 	})
--- j:start()
