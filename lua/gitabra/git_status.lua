@@ -104,7 +104,7 @@ local function status_info()
   }
 end
 
-local function hunk_infos()
+local function patch_infos()
   local funcname = debug.getinfo(1, "n").name
   print(">>", funcname)
 
@@ -139,7 +139,7 @@ local function hunk_infos()
 end
 
 local function setup_window()
-  api.nvim_command("split")
+  vim.cmd("split")
   local win = api.nvim_get_current_win()
   vim.wo[win].number = false
   vim.wo[win].relativenumber = false
@@ -150,11 +150,32 @@ local function setup_keybinds(bufnr)
   local function set_keymap(...) vim.api.nvim_buf_set_keymap(bufnr, ...) end
   local opts = { noremap=true, silent=true }
   set_keymap('n', '<tab>', '<cmd>lua require("gitabra.git_status").toggle_fold_at_current_line()<cr>', opts)
+  set_keymap('n', 's', '<cmd>lua require("gitabra.git_status").stage_hunk()<cr>', opts)
+  set_keymap('n', 'q', '<cmd>close<cr>', opts)
+end
+
+-- Looks through all available buffers and returns the gitabra status buffer if found
+-- This helps us recover the bufnr if it becomes lost. This usually happens when the
+-- module is reloaded and the `current_status_screen` gets lost.
+local function find_existing_status_buffer()
+  for _, bufnr in ipairs(api.nvim_list_bufs()) do
+    if api.nvim_buf_get_name(bufnr) == "/GitabraStatus" then
+      return bufnr
+    end
+  end
+end
+
+local function find_window_for_buffer(bufnr)
+  for _, winnr in ipairs(api.nvim_list_wins()) do
+    if api.nvim_win_get_buf(winnr) == bufnr then
+      return winnr
+    end
+  end
 end
 
 local function setup_buffer()
   local buf = vim.api.nvim_create_buf(true, false)
-  api.nvim_buf_set_name(buf, 'GitabraStatus')
+  api.nvim_buf_set_name(buf, '/GitabraStatus')
   vim.bo[buf].swapfile = false
   vim.bo[buf].buftype = 'nofile'
   -- vim.bo[buf].modifiable = false
@@ -180,12 +201,22 @@ local function get_sole_status_screen()
 
   -- Create a new window if the old one is invalid
   if not (sc.bufnr and api.nvim_buf_is_valid(sc.bufnr)) then
-    sc.bufnr = setup_buffer()
+    local bufnr = find_existing_status_buffer()
+    if bufnr then
+      sc.bufnr = bufnr
+    else
+      sc.bufnr = setup_buffer()
+    end
   end
 
   -- Create a new buffer if the old one is invalid
   if not (sc.winnr and api.nvim_win_is_valid(sc.winnr)) then
-    sc.winnr = setup_window()
+    local winnr = find_window_for_buffer(sc.bufnr)
+    if winnr then
+      sc.winnr = winnr
+    else
+      sc.winnr = setup_window()
+    end
   end
 
   api.nvim_set_current_win(sc.winnr)
@@ -195,40 +226,65 @@ local function get_sole_status_screen()
   return current_status_screen
 end
 
+local function node_zipper_at_current_line()
+  local lineno = vim.fn.line(".") - 1
+  local outline = get_sole_status_screen().outline
+  return outline:node_zipper_at_lineno(lineno)
+end
+
 local function toggle_fold_at_current_line()
   local lineno = vim.fn.line(".") - 1
   local outline = get_sole_status_screen().outline
-  if outline then
-    local z = outline:node_zipper_at_lineno(lineno)
-    if z then
-      -- print("picked node:", vim.inspect(z:node()))
-      local node
-
-      -- Which node do we actually want to collapse?
-      -- If the user is targetting a leaf node, like the
-      -- contents of a hunk, that node itself cannot be
-      -- collapsed. Instead, we're going to collapse it's
-      -- parent/header.
-      if not z:has_children() then
-        -- print("is leaf")
-        node = z:parent_node()
-      else
-        -- print("has children")
-        node = z:node()
-      end
-      node.collapsed = not node.collapsed
-
-      -- print("node altered:", vim.inspect(node))
-
-      -- Rebuild the buffer from scratch
-      outline:refresh()
-
-      -- Move the cursor to whatever we've just collapsed
-      -- All visible node's lineno should have been updated,
-      -- so we can just use the contents of that field directly
-      api.nvim_command(tostring(node.lineno+1))
-    end
+  if not outline then
+    return
   end
+
+  local z = outline:node_zipper_at_lineno(lineno)
+  if not z then
+    return
+  end
+
+  -- print("picked node:", vim.inspect(z:node()))
+  local node
+
+  -- Which node do we actually want to collapse?
+  -- If the user is targetting a leaf node, like the
+  -- contents of a hunk, that node itself cannot be
+  -- collapsed. Instead, we're going to collapse it's
+  -- parent/header.
+  if not z:has_children() then
+    -- print("is leaf")
+    node = z:parent_node()
+  else
+    -- print("has children")
+    node = z:node()
+  end
+  node.collapsed = not node.collapsed
+
+  -- print("node altered:", vim.inspect(node))
+
+  -- Rebuild the buffer from scratch
+  outline:refresh()
+
+  -- Move the cursor to whatever we've just collapsed
+  -- All visible node's lineno should have been updated,
+  -- so we can just use the contents of that field directly
+  vim.cmd(tostring(node.lineno+1))
+end
+
+local function stage_hunk()
+  local lineno = vim.fn.line(".") - 1
+  local outline = get_sole_status_screen().outline
+  if not outline then
+    return
+  end
+
+  local z = outline:node_zipper_at_lineno(lineno)
+  if not z then
+    return
+  end
+
+
 end
 
 local function populate_hunks(outline, parent_node, patch_info, filepath)
@@ -242,11 +298,13 @@ local function populate_hunks(outline, parent_node, patch_info, filepath)
       -- These look something like "@@ -16,10 +17,14 @@"
       local heading = outline:add_node(parent_node, {
           text = hunk.header_text,
+          type = "hunk header"
         })
 
       -- Add the content of the hunk
       outline:add_node(heading, {
-          text = string.sub(patch_info.patch_text, hunk.content_start, hunk.content_end)
+          text = string.sub(patch_info.patch_text, hunk.content_start, hunk.content_end),
+          type = "hunk content"
         })
     end
   end
@@ -258,7 +316,7 @@ local function gitabra_status()
   local fn_start = chronos.nanotime()
 
   local st_info = status_info()
-  local hk_info = hunk_infos()
+  local p_info = patch_infos()
 
   local sc = get_sole_status_screen()
 
@@ -297,7 +355,6 @@ local function gitabra_status()
     end
   end
 
-  print("Adding Unstaged entries")
   if #st_info.unstaged ~= 0 then
     -- print( "adding unstaged files:", #st_info.unstaged )
     local section = outline:add_node(nil, {
@@ -307,11 +364,10 @@ local function gitabra_status()
     })
     for _, file in pairs(st_info.unstaged) do
       local filename_node = outline:add_node(section, {text = file.name})
-      populate_hunks(outline, filename_node, hk_info.unstaged, file.name)
+      populate_hunks(outline, filename_node, p_info.unstaged, file.name)
     end
   end
 
-  print("Adding Staged entries")
   if #st_info.staged ~= 0 then
     local section = outline:add_node(nil, {
         text = "Staged",
@@ -320,7 +376,7 @@ local function gitabra_status()
     })
     for _, file in pairs(st_info.staged) do
       local filename_node = outline:add_node(section, {text = file.name})
-      populate_hunks(outline, filename_node, hk_info.staged, file.name)
+      populate_hunks(outline, filename_node, p_info.staged, file.name)
     end
   end
 
@@ -351,4 +407,5 @@ return {
   setup_window_and_buffer = setup_window_and_buffer,
   get_sole_status_screen = get_sole_status_screen,
   toggle_fold_at_current_line = toggle_fold_at_current_line,
+  find_status_buffer = find_status_buffer,
 }

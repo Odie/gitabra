@@ -249,8 +249,7 @@ function M:node_zipper_at_lineno(lineno)
     -- we're searching for
     local candidate = nil
     if #cs == 1 then
-      -- print("choosing only child")
-
+      -- print("Picking only child")
       if lineno >= cs[1].lineno then
         candidate = cs[1]
       end
@@ -263,7 +262,7 @@ function M:node_zipper_at_lineno(lineno)
         -- print("c2", c2.lineno, node_debug_text(c2))
 
         if c1.lineno <= lineno and lineno < c2.lineno then
-          -- print("picking c1")
+          -- print("Picking c1")
           candidate = c1
           break
         end
@@ -286,6 +285,10 @@ function M:node_zipper_at_lineno(lineno)
 
     -- print("navigating to child @", node_debug_text(candidate))
     z:to_child_node(candidate)
+
+    if candidate.lineno == lineno then
+      break
+    end
     cs = z:children()
   end
 
