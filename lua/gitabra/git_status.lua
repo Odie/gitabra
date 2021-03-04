@@ -349,6 +349,7 @@ local function gitabra_status()
     local section = outline:add_node(nil, {
         text = "Untracked",
         id = "untracked",
+        padlines_before = 1,
     })
     for _, file in pairs(st_info.untracked) do
       outline:add_node(section, {text = file.name})
