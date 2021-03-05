@@ -207,15 +207,6 @@ function M:region_occupied(node)
   end
 end
 
-local function within_region(region, lineno)
-  if region[1] <= lineno and lineno <= region[2] then
-    return true
-  else
-    return false
-  end
-end
-
-
 function M:node_zipper_at_lineno(lineno)
   local z = zipper.new(self.root, "children")
   local cs = z:children()
@@ -297,7 +288,7 @@ function M:node_zipper_at_lineno(lineno)
 
   -- At this point, the zipper should be pointing at a node
   -- that we think contains the target linenumber.
-  if within_region(self:region_occupied(z:node()) , lineno) then
+  if u.within_region(self:region_occupied(z:node()) , lineno) then
     -- print("is in region")
     return z
   else

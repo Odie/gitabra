@@ -164,6 +164,7 @@ local function setup_keybinds(bufnr)
   local opts = { noremap=true, silent=true }
   set_keymap('n', '<tab>', '<cmd>lua require("gitabra.git_status").toggle_fold_at_current_line()<cr>', opts)
   set_keymap('n', 's', '<cmd>lua require("gitabra.git_status").stage_hunk()<cr>', opts)
+  set_keymap('v', 's', '<cmd>lua require("gitabra.git_status").stage_hunk()<cr>', opts)
   set_keymap('n', 'q', '<cmd>close<cr>', opts)
 end
 
@@ -194,6 +195,8 @@ local function setup_buffer()
   -- vim.bo[buf].modifiable = false
   vim.bo[buf].filetype = 'GitabraStatus'
   vim.bo[buf].syntax = 'diff'
+  vim.bo[buf].readonly = true
+  vim.bo[buf].modifiable = false
   setup_keybinds(buf)
   return buf
 end
@@ -246,6 +249,12 @@ local function node_zipper_at_current_line()
   return outline:node_zipper_at_lineno(lineno)
 end
 
+local function outline_refresh(outline)
+  vim.bo[outline.buffer].modifiable = true
+  outline:refresh()
+  vim.bo[outline.buffer].modifiable = false
+end
+
 local function toggle_fold_at_current_line()
   local lineno = vim.fn.line(".") - 1
   local outline = get_sole_status_screen().outline
@@ -278,7 +287,7 @@ local function toggle_fold_at_current_line()
   -- print("node altered:", vim.inspect(node))
 
   -- Rebuild the buffer from scratch
-  outline:refresh()
+  outline_refresh(outline)
 
   -- Move the cursor to whatever we've just collapsed
   -- All visible node's lineno should have been updated,
@@ -407,13 +416,57 @@ local function gitabra_status()
 
   local lineno = vim.fn.line(".")
   start = chronos.nanotime()
-  outline:refresh()
+  outline_refresh(outline)
   stop = chronos.nanotime()
   -- print(string.format("Outline refresh completed: [%f]", stop-start))
   vim.cmd(tostring(lineno))
 
   local fn_stop = chronos.nanotime()
   -- print(string.format("<<< %s [%f]", funcname, fn_stop-fn_start))
+end
+
+-- Given the contents of a hunk and the region that was selected (0 indexed),
+-- return relevant lines and line count info that can be used to build
+-- the hunk header and the hunk content
+local function partial_hunk(hunk_content, region)
+  local unmarked_lines = 0
+  local removed_lines = 0
+  local added_lines = 0
+  local content = {}
+
+  for i, line in ipairs(hunk_content) do
+    i = i - 1
+    local type
+    if line:match("^+") then
+      type = "added"
+    elseif line:match("^-") then
+      type = "removed"
+    else
+      type = "unmarked"
+    end
+
+    if u.within_region(region, i) then
+      if type == "added" then
+        added_lines = added_lines + 1
+        table.insert(content, line)
+      elseif type == "removed" then
+        removed_lines = removed_lines + 1
+        table.insert(content, line)
+      end
+    end
+
+    if type == "unmarked" then
+      unmarked_lines = unmarked_lines + 1
+      table.insert(content, line)
+    end
+  end
+
+  return {
+    added = added_lines,
+    removed = removed_lines,
+    unmarked = unmarked_lines,
+    content = content,
+  }
 end
 
 local function stage_hunk()
@@ -442,42 +495,74 @@ local function stage_hunk()
     z:up()
   end
 
+  local hunk_header_node = z:node()
+  assert(hunk_header_node.type == type_hunk_header)
 
-  local hunk_header = z:node()
-  assert(z:node().type == type_hunk_header)
-
-  local hunk_content_lines = hunk_header.children[1].text
-
-  z:up()
-  local file = z:node()
-  assert(z:node().type == type_file)
+  local hunk_content_node = hunk_header_node.children[1]
 
   z:up()
-  local section = z:node()
-  assert(section.type == type_section)
+  local file_node = z:node()
+  assert(file_node.type == type_file)
 
-  local patch = patches[section.id]
+  z:up()
+  local section_node = z:node()
+  assert(section_node.type == type_section)
 
-  local file_diff = patch_parser.find_file(patch.patch_info, file.text[1])
+  local patch = patches[section_node.id]
+
+  -- Generate a patch for the selected hunk
+  -- To do that, we need a file diff header, the hunk header, and the hunk contents
+  --
+  -- To get the file diff header, we're going to extract whatever was returned from the `git diff`
+  -- result for this particular file.
+  --
+  -- To get the hunk header and hunk content, we're going to grab both from the outline directly.
+
+  local file_diff = patch_parser.find_file(patch.patch_info, file_node.text[1])
   local diff_header = patch_parser.file_diff_get_header_contents(file_diff, patch.patch_text)
   diff_header = u.remove_trailing_newlines(diff_header)
 
-  local text = {diff_header, hunk_header.text[1]}
-  for _,v in ipairs(hunk_content_lines) do
-    table.insert(text, v)
+  local hunk_header = hunk_header_node.text[1]
+  local hunk_content = hunk_content_node.text
+
+  -- If the user has selected just part of the hunk, we need to
+  -- make some adjustments to the header and the content
+  local region = u.selected_region()
+  if region[1] ~= region[2] then
+    local offset = hunk_content_node.lineno
+    local result = partial_hunk(hunk_content_node.text, {region[1]-offset, region[2]-offset})
+    local hh = patch_parser.parse_hunk_header(hunk_header_node.text[1])
+    hh[2] = result.unmarked + result.removed
+    hh[4] = result.unmarked + result.added
+
+    hunk_header = patch_parser.make_hunk_header(hh)
+    hunk_content = result.content
+
+    local mode = vim.fn.mode()
+    if mode == "v" or mode == "V" then
+      api.nvim_input("<ESC>")
+    end
   end
-  table.insert(text, "")
+
+  local lines = {diff_header, hunk_header}
+  for _,v in ipairs(hunk_content) do
+    table.insert(lines, v)
+  end
+  table.insert(lines, "")
 
   local direction
-  if section.id == "unstaged" then
+  if section_node.id == "unstaged" then
     direction = "stage"
   else
     direction = "unstage"
   end
 
-  local j = git_apply_patch(direction, table.concat(text, "\n"))
+  local j = git_apply_patch(direction, table.concat(lines, "\n"))
   job.wait_all(100, {j})
 
+  -- The state of the hunks have changed
+  -- Simply refreshing the outline will not reflect the new state
+  -- We need to run `git diff` again and rebuild everything
   gitabra_status()
 end
 

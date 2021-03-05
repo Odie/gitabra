@@ -336,6 +336,19 @@ local function remove_trailing_newlines(str)
   return string.gsub(str, "[\r\n]+$", "")
 end
 
+local function selected_region()
+  return {vim.fn.line("v")-1, vim.fn.line(".")-1}
+end
+
+local function within_region(region, lineno)
+  if region[1] <= lineno and lineno <= region[2] then
+    return true
+  else
+    return false
+  end
+end
+
+
 return {
   lines = lines,
   lines_array = lines_array,
@@ -356,4 +369,6 @@ return {
   filter = filter,
   map = map,
   remove_trailing_newlines = remove_trailing_newlines,
+  selected_region = selected_region,
+  within_region = within_region,
 }

@@ -37,7 +37,7 @@ local function parse_hunk_header(text)
   return u.map(result, tonumber)
 end
 
-local function hunk_make_header(arr)
+local function make_hunk_header(arr)
   return string.format("@@ -%i,%i +%i,%i @@", arr[1], arr[2], arr[3], arr[4])
 end
 
@@ -188,6 +188,6 @@ return {
   find_file = find_file,
   find_hunk = find_hunk,
   parse_hunk_header = parse_hunk_header,
-  hunk_make_header = hunk_make_header,
+  make_hunk_header = make_hunk_header,
   file_diff_get_header_contents = file_diff_get_header_contents,
 }
