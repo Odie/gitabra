@@ -116,8 +116,6 @@ function M.are_jobs_done(jobs)
   return true
 end
 
-local chronos = require('chronos')
-
 -- Wait up to `ms` approximately milliseconds until all the jobs are done
 function M.wait_all(ms, jobs)
   return vim.wait(ms,

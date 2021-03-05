@@ -25,6 +25,19 @@ local function git_diff_staged()
   return u.system_async("git diff --cached", {merge_output=true})
 end
 
+local function git_apply_patch(direction, patch_text)
+  local cmd = {"git", "apply", "--cached"}
+  if direction == "unstage" then
+    table.insert(cmd, "--reverse")
+  end
+
+  table.insert(cmd, "-")
+  local j = u.system_async(cmd)
+  j.job:send(patch_text)
+
+  return j
+end
+
 local function status_letter_name(letter)
   if "M" == letter then return "modified"
   elseif "A" == letter then return "added"
@@ -38,8 +51,8 @@ local function status_letter_name(letter)
 end
 
 local function status_info()
-  local funcname = debug.getinfo(1, "n").name
-  print(">>", funcname)
+  -- local funcname = debug.getinfo(1, "n").name
+  -- print(">>", funcname)
 
   local start = chronos.nanotime()
   local branch_j = git_get_branch()
@@ -53,7 +66,7 @@ local function status_info()
   end
 
   local stop = chronos.nanotime()
-  print(string.format("git commands completed [%f]", stop-start))
+  -- print(string.format("git commands completed [%f]", stop-start))
 
   --------------------------------------------------------------------
   start = chronos.nanotime()
@@ -88,12 +101,12 @@ local function status_info()
   end
 
   stop = chronos.nanotime()
-  print(string.format("Info reorg completed [%f]", stop-start))
+  -- print(string.format("Info reorg completed [%f]", stop-start))
 
   local commit_msg = branch_msg_j.output[1]
   commit_msg = commit_msg and commit_msg:sub(2, -2) or "No commits yet"
 
-  print("<<", funcname)
+  -- print("<<", funcname)
 
   return {
     header = string.format("[%s] %s", branch_j.output[1], commit_msg),
@@ -105,8 +118,8 @@ local function status_info()
 end
 
 local function patch_infos()
-  local funcname = debug.getinfo(1, "n").name
-  print(">>", funcname)
+  -- local funcname = debug.getinfo(1, "n").name
+  -- print(">>", funcname)
 
   local start = chronos.nanotime()
   local unstaged_j = git_diff_unstaged()
@@ -118,7 +131,7 @@ local function patch_infos()
     error(string.format("%s: unable to complete git commands withint alotted time", funcname))
   end
   local stop = chronos.nanotime()
-  print(string.format("git commands completed [%f]", stop-start))
+  -- print(string.format("git commands completed [%f]", stop-start))
 
   start = chronos.nanotime()
   local info = {
@@ -132,9 +145,9 @@ local function patch_infos()
     }
   }
   stop = chronos.nanotime()
-  print(string.format("Patch parsing completed [%f]", stop-start))
+  -- print(string.format("Patch parsing completed [%f]", stop-start))
 
-  print("<<", funcname)
+  -- print("<<", funcname)
   return info
 end
 
@@ -180,6 +193,7 @@ local function setup_buffer()
   vim.bo[buf].buftype = 'nofile'
   -- vim.bo[buf].modifiable = false
   vim.bo[buf].filetype = 'GitabraStatus'
+  vim.bo[buf].syntax = 'diff'
   setup_keybinds(buf)
   return buf
 end
@@ -272,20 +286,10 @@ local function toggle_fold_at_current_line()
   vim.cmd(tostring(node.lineno+1))
 end
 
-local function stage_hunk()
-  local lineno = vim.fn.line(".") - 1
-  local outline = get_sole_status_screen().outline
-  if not outline then
-    return
-  end
-
-  local z = outline:node_zipper_at_lineno(lineno)
-  if not z then
-    return
-  end
-
-
-end
+local type_section = "section"
+local type_file = "file"
+local type_hunk_header = "hunk header"
+local type_hunk_content = "hunk content"
 
 local function populate_hunks(outline, parent_node, patch_info, filepath)
   local diff = patch_parser.find_file(patch_info.patch_info, filepath)
@@ -298,30 +302,37 @@ local function populate_hunks(outline, parent_node, patch_info, filepath)
       -- These look something like "@@ -16,10 +17,14 @@"
       local heading = outline:add_node(parent_node, {
           text = hunk.header_text,
-          type = "hunk header"
+          type = type_hunk_header,
         })
 
       -- Add the content of the hunk
       outline:add_node(heading, {
           text = string.sub(patch_info.patch_text, hunk.content_start, hunk.content_end),
-          type = "hunk content"
+          type = type_hunk_content,
         })
     end
   end
 end
 
+local function make_file_node(filename)
+  return {
+    text = filename,
+    type = type_file,
+  }
+end
+
 local function gitabra_status()
-  local funcname = debug.getinfo(1, "n").name
-  print(">>>", funcname)
+  -- local funcname = debug.getinfo(1, "n").name
+  -- print(">>>", funcname)
   local fn_start = chronos.nanotime()
 
   local st_info = status_info()
-  local p_info = patch_infos()
+  local patches = patch_infos()
 
   local sc = get_sole_status_screen()
 
   --------------------------------------------------------------------
-  print("Creating outline")
+  -- print("Creating outline")
   local start = chronos.nanotime()
   local outline = outliner.new({buffer = sc.bufnr})
 
@@ -348,11 +359,12 @@ local function gitabra_status()
   if #st_info.untracked ~= 0 then
     local section = outline:add_node(nil, {
         text = "Untracked",
+        type = type_section,
         id = "untracked",
         padlines_before = 1,
     })
     for _, file in pairs(st_info.untracked) do
-      outline:add_node(section, {text = file.name})
+      outline:add_node(section, make_file_node(file.name))
     end
   end
 
@@ -360,53 +372,121 @@ local function gitabra_status()
     -- print( "adding unstaged files:", #st_info.unstaged )
     local section = outline:add_node(nil, {
         text = "Unstaged",
+        type = type_section,
         id = "unstaged",
         padlines_before = 1,
     })
     for _, file in pairs(st_info.unstaged) do
-      local filename_node = outline:add_node(section, {text = file.name})
-      populate_hunks(outline, filename_node, p_info.unstaged, file.name)
+      local file_node = outline:add_node(section, make_file_node(file.name))
+      populate_hunks(outline, file_node, patches.unstaged, file.name)
     end
   end
 
   if #st_info.staged ~= 0 then
     local section = outline:add_node(nil, {
         text = "Staged",
+        type = type_section,
         id = "staged",
         padlines_before = 1,
     })
     for _, file in pairs(st_info.staged) do
-      local filename_node = outline:add_node(section, {text = file.name})
-      populate_hunks(outline, filename_node, p_info.staged, file.name)
+      local file_node = outline:add_node(section, make_file_node(file.name))
+      populate_hunks(outline, file_node, patches.staged, file.name)
     end
   end
 
   local stop = chronos.nanotime()
-  print(string.format("Outline completed: [%f]", stop-start))
+  -- print(string.format("Outline completed: [%f]", stop-start))
 
   -- Place the new outline into the global sc before any nodes & content are added.
   -- `get_fold_level` will be called by nvim as nodes are added to the outline.
   -- The global sc is the only way that function can find the currently active outline.
   sc.outline = outline
+  sc.patches = patches
   --------------------------------------------------------------------
 
+  local lineno = vim.fn.line(".")
   start = chronos.nanotime()
   outline:refresh()
   stop = chronos.nanotime()
-  print(string.format("Outline refresh completed: [%f]", stop-start))
+  -- print(string.format("Outline refresh completed: [%f]", stop-start))
+  vim.cmd(tostring(lineno))
 
   local fn_stop = chronos.nanotime()
-  print(string.format("<<< %s [%f]", funcname, fn_stop-fn_start))
+  -- print(string.format("<<< %s [%f]", funcname, fn_stop-fn_start))
+end
+
+local function stage_hunk()
+  local lineno = vim.fn.line(".") - 1
+  local sc = get_sole_status_screen()
+  local outline = sc.outline
+  if not outline then
+    return
+  end
+
+  local z = outline:node_zipper_at_lineno(lineno)
+  if not z then
+    return
+  end
+
+  local patches = sc.patches
+  local node = z:node()
+
+  -- If we're not pointed at a hunk, we can't stage it, so do nothing
+  if not (node.type == type_hunk_content or node.type == type_hunk_header) then
+    return
+  end
+
+  -- Go up to the hunk header
+  if node.type ~= type_hunk_header then
+    z:up()
+  end
+
+
+  local hunk_header = z:node()
+  assert(z:node().type == type_hunk_header)
+
+  local hunk_content_lines = hunk_header.children[1].text
+
+  z:up()
+  local file = z:node()
+  assert(z:node().type == type_file)
+
+  z:up()
+  local section = z:node()
+  assert(section.type == type_section)
+
+  local patch = patches[section.id]
+
+  local file_diff = patch_parser.find_file(patch.patch_info, file.text[1])
+  local diff_header = patch_parser.file_diff_get_header_contents(file_diff, patch.patch_text)
+  diff_header = u.remove_trailing_newlines(diff_header)
+
+  local text = {diff_header, hunk_header.text[1]}
+  for _,v in ipairs(hunk_content_lines) do
+    table.insert(text, v)
+  end
+  table.insert(text, "")
+
+  local direction
+  if section.id == "unstaged" then
+    direction = "stage"
+  else
+    direction = "unstage"
+  end
+
+  local j = git_apply_patch(direction, table.concat(text, "\n"))
+  job.wait_all(100, {j})
+
+  gitabra_status()
 end
 
 return {
   status_info = status_info,
-  hunk_infos = hunk_infos,
+  patch_infos = patch_infos,
   gitabra_status = gitabra_status,
-  get_fold_level = get_fold_level,
-  get_fold_text = get_fold_text,
   setup_window_and_buffer = setup_window_and_buffer,
   get_sole_status_screen = get_sole_status_screen,
   toggle_fold_at_current_line = toggle_fold_at_current_line,
-  find_status_buffer = find_status_buffer,
+  stage_hunk = stage_hunk,
 }

@@ -24,6 +24,7 @@ end
 local function system_async(cmd, opt)
   local result = {
     output = {},
+    err_output = {},
     done = false
   }
   opt = opt or {}
@@ -41,6 +42,20 @@ local function system_async(cmd, opt)
             end
           else
             table.insert(result.output, data)
+          end
+        end
+      end,
+      on_stderr = function(_, err, data)
+        if err then
+          print("ERROR: "..err)
+        end
+        if data then
+          if opt.splitlines then
+            for line in lines(data) do
+              table.insert(result.output, line)
+            end
+          else
+            table.insert(result.err_output, data)
           end
         end
       end,
@@ -317,6 +332,10 @@ local function map(table, func)
   return table
 end
 
+local function remove_trailing_newlines(str)
+  return string.gsub(str, "[\r\n]+$", "")
+end
+
 return {
   lines = lines,
   lines_array = lines_array,
@@ -336,4 +355,5 @@ return {
   partition_iterator = partition_iterator,
   filter = filter,
   map = map,
+  remove_trailing_newlines = remove_trailing_newlines,
 }

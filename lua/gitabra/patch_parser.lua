@@ -20,7 +20,7 @@ local function diff_indices(text_in)
 end
 
 local function hunk_iter(text, index)
-  local s, e = text:find("\n@@ [+-]?%d+,[+-]?%d+ [+-]?%d+,[+-]?%d+ @@", index+1)
+  local s, e = text:find("\n@@ [+-]?%d+,%d+ [+-]?%d+,%d+ @@.-\n", index+1)
   if s == nil then
     return e, s, e
   else
@@ -30,6 +30,21 @@ end
 
 local function hunk_indices(text_in)
   return hunk_iter , text_in, 0
+end
+
+local function parse_hunk_header(text)
+  local result = {text:match("^@@ [+-]?(%d+),(%d+) [+-]?(%d+),(%d+) @@")}
+  return u.map(result, tonumber)
+end
+
+local function hunk_make_header(arr)
+  return string.format("@@ -%i,%i +%i,%i @@", arr[1], arr[2], arr[3], arr[4])
+end
+
+local function file_diff_get_header_contents(file_diff, patch_text)
+  local header_start = file_diff.header_start
+  local header_end = file_diff.hunks[1].header_start-1
+  return string.sub(patch_text, header_start, header_end)
 end
 
 -- Locates where file diffs and hunks and their starting positions
@@ -133,7 +148,7 @@ local function patch_info(patch_text)
       local hunk = {
         header_text = hunk_header.text,
         header_start = hunk_header.match_start,
-        content_start = hunk_header.match_stop+2,
+        content_start = hunk_header.match_stop+1,
       }
       if j ~= #diff_header.hunks then
         hunk.content_end = diff_header.hunks[j+1].match_start-2
@@ -158,9 +173,21 @@ local function find_file(infos, filepath)
   end
 end
 
+local function find_hunk(file_diff, header_text)
+  for _, hunk in ipairs(file_diff.hunks) do
+    if hunk.header_text == header_text then
+      return hunk
+    end
+  end
+end
+
 return {
   hunk_indices = hunk_indices,
   diff_indices = diff_indices,
   patch_info = patch_info,
   find_file = find_file,
+  find_hunk = find_hunk,
+  parse_hunk_header = parse_hunk_header,
+  hunk_make_header = hunk_make_header,
+  file_diff_get_header_contents = file_diff_get_header_contents,
 }

@@ -236,8 +236,11 @@
 
   (st.get_sole_status_screen)
 
-  (let [outline (u.get_in (st.get_sole_status_screen) [:outline]) ]
-    (outline:refresh)
+  (let [outline (u.get_in (st.get_sole_status_screen) [:outline])
+        start (chronos.nanotime)
+        _ (outline:refresh)
+        stop (chronos.nanotime)]
+    (print (string.format "Refresh took [%f]" (- stop start)))
     )
 
 )
