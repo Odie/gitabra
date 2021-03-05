@@ -6,7 +6,6 @@
             nvim aniseed.nvim
             lpeg lpeg
             zipper gitabra.zipper
-            chronos chronos
             }})
 
             ; patch_parser gitabra.patch_parser
@@ -204,9 +203,9 @@
     )
 
   (let [outline (u.get_in (st.get_sole_status_screen) [:outline])
-        start (chronos.nanotime)
+        start (u.nanotime)
         z (outline:node_zipper_at_lineno 9)
-        stop (chronos.nanotime)
+        stop (u.nanotime)
         ]
     (if z
       (do
@@ -237,10 +236,9 @@
   (st.get_sole_status_screen)
 
   (let [outline (u.get_in (st.get_sole_status_screen) [:outline])
-        start (chronos.nanotime)
+        start (u.nanotime)
         _ (outline:refresh)
-        stop (chronos.nanotime)]
+        stop (u.nanotime)]
     (print (string.format "Refresh took [%f]" (- stop start)))
     )
-
 )

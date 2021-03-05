@@ -1,5 +1,4 @@
 local job = require('gitabra.job')
-local chronos = require('chronos')
 local api = vim.api
 
 -- Returns an iterator over each line in `str`
@@ -13,6 +12,10 @@ local function lines_array(str)
     table.insert(result, line)
   end
   return result
+end
+
+local function nanotime()
+  return vim.loop.hrtime() / 1000000000
 end
 
 -- Execute the given command asynchronously
@@ -64,12 +67,12 @@ local function system_async(cmd, opt)
           result.output = { table.concat(result.output) }
         end
         result.done = true
-        result.stop_time = chronos.nanotime()
+        result.stop_time = nanotime()
         result.elapsed_time = result.stop_time - result.start_time
       end
     })
 
-  result.start_time = chronos.nanotime()
+  result.start_time = nanotime()
   j:start()
 
   result.job = j
@@ -371,4 +374,5 @@ return {
   remove_trailing_newlines = remove_trailing_newlines,
   selected_region = selected_region,
   within_region = within_region,
+  nanotime = nanotime,
 }

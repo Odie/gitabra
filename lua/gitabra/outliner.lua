@@ -158,6 +158,11 @@ function M:delete_all_text()
 end
 
 function M:refresh()
+  local modifiable = vim.bo[self.buffer].modifiable
+  if not modifiable then
+    vim.bo[self.buffer].modifiable = true
+  end
+
   self:delete_all_linemarks()
   self:delete_all_text()
 
@@ -196,6 +201,10 @@ function M:refresh()
       -- print("moving next")
       z:next()
     end
+  end
+
+  if not modifiable then
+    vim.bo[self.buffer].modifiable = modifiable
   end
 end
 

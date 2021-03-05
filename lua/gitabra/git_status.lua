@@ -1,5 +1,4 @@
 local u = require("gitabra.util")
-local chronos = require("chronos")
 local job = require("gitabra.job")
 local outliner = require("gitabra.outliner")
 local api = vim.api
@@ -51,10 +50,6 @@ local function status_letter_name(letter)
 end
 
 local function status_info()
-  -- local funcname = debug.getinfo(1, "n").name
-  -- print(">>", funcname)
-
-  local start = chronos.nanotime()
   local branch_j = git_get_branch()
   local branch_msg_j = git_branch_commit_msg()
   local status_j = git_status()
@@ -62,14 +57,12 @@ local function status_info()
 
   local wait_result = job.wait_all(1000, jobs)
   if not wait_result then
+    local funcname = debug.getinfo(1, "n").name
     error(string.format("%s: unable to complete git commands withint alotted time", funcname))
   end
 
-  local stop = chronos.nanotime()
-  -- print(string.format("git commands completed [%f]", stop-start))
 
   --------------------------------------------------------------------
-  start = chronos.nanotime()
 
   local files = {}
   local untracked = {}
@@ -100,13 +93,8 @@ local function status_info()
     table.insert(files, entry)
   end
 
-  stop = chronos.nanotime()
-  -- print(string.format("Info reorg completed [%f]", stop-start))
-
   local commit_msg = branch_msg_j.output[1]
   commit_msg = commit_msg and commit_msg:sub(2, -2) or "No commits yet"
-
-  -- print("<<", funcname)
 
   return {
     header = string.format("[%s] %s", branch_j.output[1], commit_msg),
@@ -118,22 +106,16 @@ local function status_info()
 end
 
 local function patch_infos()
-  -- local funcname = debug.getinfo(1, "n").name
-  -- print(">>", funcname)
-
-  local start = chronos.nanotime()
   local unstaged_j = git_diff_unstaged()
   local staged_j = git_diff_staged()
 
   local jobs = {unstaged_j, staged_j}
   local wait_result = job.wait_all(1000, jobs)
   if not wait_result then
+    local funcname = debug.getinfo(1, "n").name
     error(string.format("%s: unable to complete git commands withint alotted time", funcname))
   end
-  local stop = chronos.nanotime()
-  -- print(string.format("git commands completed [%f]", stop-start))
 
-  start = chronos.nanotime()
   local info = {
     unstaged = {
       patch_info = patch_parser.patch_info(unstaged_j.output[1]),
@@ -144,10 +126,7 @@ local function patch_infos()
       patch_text = staged_j.output[1],
     }
   }
-  stop = chronos.nanotime()
-  -- print(string.format("Patch parsing completed [%f]", stop-start))
 
-  -- print("<<", funcname)
   return info
 end
 
@@ -192,10 +171,8 @@ local function setup_buffer()
   api.nvim_buf_set_name(buf, '/GitabraStatus')
   vim.bo[buf].swapfile = false
   vim.bo[buf].buftype = 'nofile'
-  -- vim.bo[buf].modifiable = false
   vim.bo[buf].filetype = 'GitabraStatus'
   vim.bo[buf].syntax = 'diff'
-  vim.bo[buf].readonly = true
   vim.bo[buf].modifiable = false
   setup_keybinds(buf)
   return buf
@@ -249,12 +226,6 @@ local function node_zipper_at_current_line()
   return outline:node_zipper_at_lineno(lineno)
 end
 
-local function outline_refresh(outline)
-  vim.bo[outline.buffer].modifiable = true
-  outline:refresh()
-  vim.bo[outline.buffer].modifiable = false
-end
-
 local function toggle_fold_at_current_line()
   local lineno = vim.fn.line(".") - 1
   local outline = get_sole_status_screen().outline
@@ -287,7 +258,7 @@ local function toggle_fold_at_current_line()
   -- print("node altered:", vim.inspect(node))
 
   -- Rebuild the buffer from scratch
-  outline_refresh(outline)
+  outline:refresh()
 
   -- Move the cursor to whatever we've just collapsed
   -- All visible node's lineno should have been updated,
@@ -331,18 +302,12 @@ local function make_file_node(filename)
 end
 
 local function gitabra_status()
-  -- local funcname = debug.getinfo(1, "n").name
-  -- print(">>>", funcname)
-  local fn_start = chronos.nanotime()
-
   local st_info = status_info()
   local patches = patch_infos()
 
   local sc = get_sole_status_screen()
 
   --------------------------------------------------------------------
-  -- print("Creating outline")
-  local start = chronos.nanotime()
   local outline = outliner.new({buffer = sc.bufnr})
 
   -- We're going to add a bunch nodes/content to the buffer.
@@ -404,9 +369,6 @@ local function gitabra_status()
     end
   end
 
-  local stop = chronos.nanotime()
-  -- print(string.format("Outline completed: [%f]", stop-start))
-
   -- Place the new outline into the global sc before any nodes & content are added.
   -- `get_fold_level` will be called by nvim as nodes are added to the outline.
   -- The global sc is the only way that function can find the currently active outline.
@@ -415,14 +377,9 @@ local function gitabra_status()
   --------------------------------------------------------------------
 
   local lineno = vim.fn.line(".")
-  start = chronos.nanotime()
-  outline_refresh(outline)
-  stop = chronos.nanotime()
+  outline:refresh()
   -- print(string.format("Outline refresh completed: [%f]", stop-start))
   vim.cmd(tostring(lineno))
-
-  local fn_stop = chronos.nanotime()
-  -- print(string.format("<<< %s [%f]", funcname, fn_stop-fn_start))
 end
 
 -- Given the contents of a hunk and the region that was selected (0 indexed),
