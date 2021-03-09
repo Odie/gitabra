@@ -1,5 +1,6 @@
 local job = require('gitabra.job')
 local api = vim.api
+local ut = require('gitabra.util.table')
 
 -- Returns an iterator over each line in `str`
 local function lines(str)
@@ -12,6 +13,10 @@ local function lines_array(str)
     table.insert(result, line)
   end
   return result
+end
+
+local function interp(s, params)
+  return (s:gsub('($%b{})', function(w) return params[w:sub(3, -2)] or w end))
 end
 
 local function nanotime()
@@ -34,6 +39,7 @@ local function system_async(cmd, opt)
 
 	local j = job.new({
       cmd = cmd,
+      opt = opt,
       on_stdout = function(_, err, data)
         if err then
           print("ERROR: "..err)
@@ -79,14 +85,6 @@ local function system_async(cmd, opt)
   return result
 end
 
-local function table_lazy_get(table, key, default)
-  local v = table[key]
-  if not v then
-    table[key] = default
-    v = default
-  end
-  return v
-end
 
 -- Given the `root` of a tree of tables,
 --
@@ -116,18 +114,6 @@ end
 
 local get_in = node_from_path
 
--- Alias for better code clarity
-local table_push = table.insert
-local table_pop = table.remove
-local function table_get_last(t)
-  return t[#t]
-end
-
-local function table_clone(t)
-  return {table.unpack(org)}
-end
-
-
 -- Given a `root` and the `target_node` we're looking for,
 -- Return the path of the first occurance of the node.
 -- Returns nil if the node cannot be found
@@ -149,7 +135,7 @@ local function path_from_node_compare(root, target_node, compare_fn)
 
     -- Check each child...
     for k, v in pairs(cur_node) do
-      table_push(path, k)
+      ut.table_push(path, k)
 
       -- If we found a match, return immediately without messing up
       -- the path that has been accumulated
@@ -157,7 +143,7 @@ local function path_from_node_compare(root, target_node, compare_fn)
       if match == true then
         return match
       end
-      table_pop(path)
+      ut.table_pop(path)
     end
   end
 
@@ -180,84 +166,6 @@ local function path_from_node(root, target_node)
       end
     end)
 end
-
-
-local function table_depth_first_visit(root_table, children_fieldname)
-  local stack = {}
-
-  table_push(stack, {
-      node = root_table,
-      visited = false
-  })
-
-  local depth_first_visit
-  depth_first_visit = function()
-    local node = table_get_last(stack)
-
-    -- If there are no more nodes to visit,
-    -- we're done!
-    if node == nil then
-      return nil
-    end
-
-    -- Visit the node itself
-    if not node.visited then
-      node.visited = true
-      return node.node
-    end
-
-    -- Grab the iterator for the current node
-    local iter = node.iter
-    if not node.iter then
-      local children
-      if children_fieldname then
-        children = node.node[children_fieldname]
-      else
-        children = node.node
-      end
-
-      node.iter = {pairs(children)}
-      -- We should get back a function `f`, an invariant `s`, and a control variable `v`
-
-      iter = node.iter
-    end
-
-    -- Grab a child node
-    while true do
-      local k, next_node = iter[1](iter[2], iter[3]) -- f(s, v)
-      iter[3] = k -- update the control var to prep for next iteration
-
-      -- Do we have more child nodes to visit?
-      if k == nil then
-        -- If not, continue visits at the parent
-        table_pop(stack)
-        return depth_first_visit()
-      end
-
-      -- Visit child nodes
-      if type(next_node) == "table" then
-        table_push(stack, {
-            node = next_node,
-            visted = false
-        })
-        return depth_first_visit()
-      end
-    end
-  end
-
-  return depth_first_visit
-end
-
-
-local function table_find_node(t, pred)
-  for node in table_depth_first_visit(t) do
-    if pred(node) then
-      return node
-    end
-  end
-  return nil
-end
-
 
 -- Make sure we have at least `lineno` lines in the buffer
 -- This helps when we're trying to insert lines at a position beyond the
@@ -283,9 +191,9 @@ local function partition(table, tuple_size, step)
   for i = 1, #table-tuple_size+1, step do
     local tuple = {}
     for j = 0, tuple_size-1 do
-      table_push(tuple, table[i+j])
+      ut.table_push(tuple, table[i+j])
     end
-    table_push(result, tuple)
+    ut.table_push(result, tuple)
   end
   return result
 end
@@ -309,7 +217,7 @@ local function partition_iterator(table, tuple_size, step)
     -- If so, grab all items into a tupe and return it unpacked
     local result = {}
     for i = v, end_idx do
-      table_push(result, table[i])
+      ut.table_push(result, table[i])
     end
     return unpack(result)
   end
@@ -320,7 +228,7 @@ local function filter(table, pred)
   local result = {}
   for _, v in ipairs(table) do
     if pred(v) then
-      table_push(result, v)
+      ut.table_push(result, v)
     end
   end
   return result
@@ -336,7 +244,8 @@ local function map(table, func)
 end
 
 local function remove_trailing_newlines(str)
-  return string.gsub(str, "[\r\n]+$", "")
+  local result = string.gsub(str, "[\r\n]+$", "")
+  return result
 end
 
 local function selected_region()
@@ -351,28 +260,73 @@ local function within_region(region, lineno)
   end
 end
 
+local function git_root_dir()
+  local j = system_async("git rev-parse --show-toplevel")
+  job.wait(j, 500)
+  return remove_trailing_newlines(j.output[1])
+end
 
-return {
-  lines = lines,
-  lines_array = lines_array,
-  system_async = system_async,
-  node_from_path = node_from_path,
-  get_in = node_from_path,
-  path_from_node = path_from_node,
-  table_depth_first_visit = table_depth_first_visit,
-  table_lazy_get = table_lazy_get,
-  table_find_node = table_find_node,
-  table_push = table_push,
-  table_pop = table_pop,
-  table_get_last = table_get_last,
-  table_clone = table_clone,
-  buf_padlines_to = buf_padlines_to,
-  partition = partition,
-  partition_iterator = partition_iterator,
-  filter = filter,
-  map = map,
-  remove_trailing_newlines = remove_trailing_newlines,
-  selected_region = selected_region,
-  within_region = within_region,
-  nanotime = nanotime,
-}
+local function git_dot_git_dir()
+  return git_root_dir() .. "/.git"
+end
+
+local function is_empty(str)
+  return str == nil or s == ""
+end
+
+local function is_really_empty(str)
+  if is_empty(str) then
+    return true
+  end
+
+  if string.match(str, "^%s*$") then
+    return true
+  end
+
+  return false
+end
+
+local function first_nonwhitespace_idx(str)
+  return string.find(str, "[^%s]")
+end
+
+local function nvim_commands(str, strip_leading_whitespace)
+  if not strip_leading_whitespace then
+    for line in lines(str) do
+      print(line)
+    end
+  else
+    local idx = -1
+
+    for line in lines(str) do
+      local empty = is_really_empty(line)
+      if idx == -1 and not empty then
+        idx = first_nonwhitespace_idx(str)
+      end
+      vim.cmd(line:sub(idx))
+    end
+  end
+end
+
+return ut.table_copy_into({
+    lines = lines,
+    lines_array = lines_array,
+    interp = interp,
+    system_async = system_async,
+    node_from_path = node_from_path,
+    get_in = node_from_path,
+    path_from_node = path_from_node,
+    buf_padlines_to = buf_padlines_to,
+    partition = partition,
+    partition_iterator = partition_iterator,
+    filter = filter,
+    map = map,
+    remove_trailing_newlines = remove_trailing_newlines,
+    selected_region = selected_region,
+    within_region = within_region,
+    nanotime = nanotime,
+    git_root_dir = git_root_dir,
+    git_dot_git_dir = git_dot_git_dir,
+    nvim_create_augroups = nvim_create_augroups,
+    nvim_commands = nvim_commands,
+  }, ut)

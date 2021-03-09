@@ -1,14 +1,17 @@
 (module repl
-  {require {u gitabra.util
+  {require {
+            u gitabra.util
             st gitabra.git_status
             job gitabra.job
             outliner gitabra.outliner
             nvim aniseed.nvim
             lpeg lpeg
             zipper gitabra.zipper
+            co gitabra.git_commit
+            patch_parser gitabra.patch_parser
             }})
 
-            ; patch_parser gitabra.patch_parser
+
 (def api vim.api)
 
 (def plugin_name "gitabra")

@@ -55,7 +55,7 @@ local function status_info()
   local status_j = git_status()
   local jobs = {branch_j, branch_msg_j, status_j}
 
-  local wait_result = job.wait_all(1000, jobs)
+  local wait_result = job.wait_all(jobs, 1000)
   if not wait_result then
     local funcname = debug.getinfo(1, "n").name
     error(string.format("%s: unable to complete git commands withint alotted time", funcname))
@@ -110,7 +110,7 @@ local function patch_infos()
   local staged_j = git_diff_staged()
 
   local jobs = {unstaged_j, staged_j}
-  local wait_result = job.wait_all(1000, jobs)
+  local wait_result = job.wait_all(jobs, 1000)
   if not wait_result then
     local funcname = debug.getinfo(1, "n").name
     error(string.format("%s: unable to complete git commands withint alotted time", funcname))
@@ -145,6 +145,7 @@ local function setup_keybinds(bufnr)
   set_keymap('n', 's', '<cmd>lua require("gitabra.git_status").stage_hunk()<cr>', opts)
   set_keymap('v', 's', '<cmd>lua require("gitabra.git_status").stage_hunk()<cr>', opts)
   set_keymap('n', 'q', '<cmd>close<cr>', opts)
+  set_keymap('n', 'cc', '<cmd>lua require("gitabra.git_commit").gitabra_commit()<cr>', opts)
 end
 
 -- Looks through all available buffers and returns the gitabra status buffer if found
@@ -152,7 +153,7 @@ end
 -- module is reloaded and the `current_status_screen` gets lost.
 local function find_existing_status_buffer()
   for _, bufnr in ipairs(api.nvim_list_bufs()) do
-    if api.nvim_buf_get_name(bufnr) == "/GitabraStatus" then
+    if api.nvim_buf_get_name(bufnr) == "GitabraStatus" then
       return bufnr
     end
   end
@@ -168,7 +169,7 @@ end
 
 local function setup_buffer()
   local buf = vim.api.nvim_create_buf(true, false)
-  api.nvim_buf_set_name(buf, '/GitabraStatus')
+  api.nvim_buf_set_name(buf, 'GitabraStatus')
   vim.bo[buf].swapfile = false
   vim.bo[buf].buftype = 'nofile'
   vim.bo[buf].filetype = 'GitabraStatus'

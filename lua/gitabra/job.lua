@@ -1,4 +1,6 @@
 -- Adapted from https://github.com/TravonteD/luajob
+local ut = require('gitabra.util.table')
+
 local M = {}
 M.__index = M
 
@@ -75,16 +77,8 @@ function M:options()
     self.stderr
   }
 
-  if self.cwd then
-    options.cwd = self.cwd
-  end
-
-  if self.env then
-    options.env = self.env
-  end
-
-  if self.detach then
-    options.detach = self.detach
+  if self.opt then
+    ut.table_copy_into(options, self.opt)
   end
 
   return options
@@ -103,6 +97,16 @@ function M:start()
   end
 end
 
+------------------------------------------------------------------------------------
+-- Utilities
+--
+-- Note that these utilities are meant to be used with util.system_async.
+-- Maybe a better place for these functions is in util?
+
+function M.is_job_done(job)
+  return job.done
+end
+
 function M.are_jobs_done(jobs)
   -- If any of the jobs are not done yet,
   -- we're not done
@@ -116,12 +120,25 @@ function M.are_jobs_done(jobs)
   return true
 end
 
+-- Wait until either `ms` has elapsed or when `predicate` returns true
+function M.wait_for(job, ms, predicate)
+  return vim.wait(ms, predicate, 5)
+end
+
+function M.wait(job, ms)
+  return vim.wait(ms,
+    function()
+      return job.done
+    end, 5)
+end
+
 -- Wait up to `ms` approximately milliseconds until all the jobs are done
-function M.wait_all(ms, jobs)
+function M.wait_all(jobs, ms)
   return vim.wait(ms,
     function()
       return M.are_jobs_done(jobs)
     end, 5)
 end
+
 
 return M
