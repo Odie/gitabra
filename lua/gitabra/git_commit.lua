@@ -65,7 +65,6 @@ local function gitabra_commit()
     vim.bo[bufnr].bufhidden = "wipe"
     vim.bo[bufnr].swapfile = false
 
-    local start = u.nanotime()
     u.nvim_commands([[
         augroup ReleaseGitCommit
           autocmd! * <buffer>
@@ -75,7 +74,6 @@ local function gitabra_commit()
         augroup END
         ]], true)
 
-    local stop = u.nanotime()
     singleton = {
         temppath = temppath,
         job = j,

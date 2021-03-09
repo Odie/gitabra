@@ -516,7 +516,7 @@ local function stage_hunk()
   end
 
   local j = git_apply_patch(direction, table.concat(lines, "\n"))
-  job.wait_all(100, {j})
+  job.wait(j, 100)
 
   -- The state of the hunks have changed
   -- Simply refreshing the outline will not reflect the new state
