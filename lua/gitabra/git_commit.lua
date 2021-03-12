@@ -25,7 +25,7 @@ local function finish_commit(event)
     local commit_state = singleton
     if commit_state then
         singleton = nil
-        local j = u.system_async({'touch', commit_state.temppath..".exit"})
+        u.system_async({'touch', commit_state.temppath..".exit"})
         job.wait(commit_state.job, 1000)
         if #commit_state.job.err_output ~= 0 then
             vim.cmd(string.format("echom '%s'",

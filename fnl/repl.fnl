@@ -40,6 +40,8 @@
     (if (= (vim.api.nvim_buf_get_name bn) "")
       (vim.api.nvim_buf_delete bn {}))))
 
+
+
 (comment
   (unload)
 
@@ -244,4 +246,91 @@
         stop (u.nanotime)]
     (print (string.format "Refresh took [%f]" (- stop start)))
     )
+
+  (co.make_editor_script)
+  (def j (u.system_async
+           (u.interp "GIT_EDITOR=${editor_script} git commit"
+                     {:editor_script (co.make_editor_script)})))
+
+  (def j (u.system_async ["sh" "-c" "echo $GIT_EDITOR"]
+                         {:env [(string.format "GIT_EDITOR=%s" (co.make_editor_script))]}))
+
+  (def j (u.system_async ["echo" "$GIT_EDITOR"]
+                         {:env [(string.format "GIT_EDITOR=%s" (co.make_editor_script))]}))
+  j
+  (def j (co.gitabra_commit))
+
+  api
+  vim.fn
+  (vim.fn.getcwd)
+  (def j (u.git_root_dir))
+  (u.git_dot_git_dir)
+  (u.git_root_dir)
+  (u.git_dot_git_dir)
+
+  (u.nvim_create_augroups {:ReleaseGitcommit ["BufWritePost <buffer> lua require()"
+                                              "BufDelete <buffer> lua require()" ]})
+  (co.test)
+
+  (u.remove_trailing_newlines "hello world\n\n")
+
+  (u.table_key_diff
+    (u.table_array_to_set [{:id "node-1" :hello :world}
+                           {:id "node-2" :hello :there}
+                           ]
+                          (fn [x]
+                            (. x :id)))
+    (u.table_array_to_set [{:id "node-1" :hello :world}
+                           {:id "node-3" :hello :universe}
+                           ]
+                          (fn [x]
+                            (. x :id))))
+
+  (let [lm (require "gitabra.list")
+        l (lm.new)]
+    (print "1 empty?" (l:is_empty))
+    (l:push_right :hello)
+    (l:push_right :world)
+    (print "2 empty?" (l:is_empty))
+    (l:pop_left)
+    (l:pop_left)
+    (print "3 empty?" (l:is_empty))
+    l
+    )
+
+  (let [md5 (require "gitabra.md5")
+        start (u.nanotime)
+        checksum (md5.sumhexa "hello\n")
+        stop (u.nanotime)
+        ]
+    (print "elapsed:" (- stop start))
+    checksum
+
+    )
+
+  ; (st.reconcile_status_state {:outline (outliner.new({:root {:text ["hello" "world"]}}})
+  ;                            {:outline {:root {:text ["hello" "world"]}}})
+
+
+  (st.reconcile_status_state {:outline (outliner.new {:root {:children [{:text ["hello" "world"]
+                                                                         :hello :world
+                                                                         :children [{:text ["Traveler"]
+                                                                                     :name "Odie"}
+                                                                                    {:text ["Planes"]
+                                                                                     :count 5}
+                                                                                    {:text ["Trains"]
+                                                                                     :arrival :on-time}]}
+                                                                        {:text ["hello" "there"]
+                                                                         :hello :there}]}})}
+
+                             {:outline (outliner.new {:root {:children [{:text ["pretty" "good"]}
+                                                                        {:text ["hello" "world"]
+                                                                         :children [{:text ["Traveler"]}
+                                                                                    {:text ["UFOs"]}
+                                                                                    {:text ["Planes"]}
+                                                                                    {:text ["Greys"]}]}
+                                                                        {:text ["what's" "up"]}]} })}
+                             )
+
+(next nil)
 )

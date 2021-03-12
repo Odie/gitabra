@@ -113,6 +113,10 @@ function M.new(o_in)
   return o
 end
 
+function M:node_zipper()
+  return zipper.new(self.root, "children")
+end
+
 
 -- Add a `child_node` into the `parent_node`
 -- Return the added child node
@@ -167,7 +171,7 @@ function M:refresh()
   self:delete_all_text()
 
   -- Start a new zipper and move to the first child of the root node
-  local z = zipper.new(self.root, "children")
+  local z = self:node_zipper()
   z:down()
 
   -- print("About to start loop")
@@ -217,7 +221,7 @@ function M:region_occupied(node)
 end
 
 function M:node_zipper_at_lineno(lineno)
-  local z = zipper.new(self.root, "children")
+  local z = self:node_zipper()
   local cs = z:children()
 
   while cs and #cs ~= 0 do
@@ -313,6 +317,14 @@ end
 
 function M:find_node(pred)
   return u.table_find_node(self.root, pred)
+end
+
+function M:node_children(node)
+  return node.children
+end
+
+function M:set_node_children(node, new_children)
+  node.children = new_children
 end
 
 

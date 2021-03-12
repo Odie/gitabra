@@ -1,3 +1,4 @@
+local uf = require('gitabra.util.functional')
 
 -- Performs a shallow copy of a list of hashtables into the `target`
 local function table_copy_into(target, ...)
@@ -108,6 +109,76 @@ local function table_find_node(t, pred)
   return nil
 end
 
+local function table_key_diff(t1, t2)
+  local added = {}
+  local removed = {}
+  local common = {}
+
+  -- For every k in t1...
+  for k, v in pairs(t1) do
+    if v ~= nil then
+      -- If that k is also in t2, then tables
+      -- have the key in common
+      if t2[k] then
+        table_push(common, k)
+      else
+      -- If that k is not in t2, the key has been removed
+        table_push(removed, k)
+      end
+    end
+  end
+
+  for k, v in pairs(t2) do
+    if v ~= nil then
+      if not t1[k] then
+        table_push(added, k)
+      end
+    end
+  end
+
+  return {
+    added = added,
+    removed = removed,
+    common = common,
+  }
+end
+
+local function table_array_to_set(t, id_func)
+  if not id_func then
+    id_func = uf.ident
+  end
+  local set = {}
+  for _, v in ipairs(t) do
+    local k = id_func(v)
+    if k then
+      set[k] = v
+    end
+  end
+  return set
+end
+
+local table_array_items_by_id = table_array_to_set
+
+
+local function table_array_find_by(t, target_val, val_func)
+  if not val_func then
+    val_func = uf.ident
+  end
+  for i, e in ipairs(t) do
+    if val_func(e) == target_val then
+      return i
+    end
+  end
+end
+
+local function table_is_empty(t)
+  if next(t) == nil then
+    return true
+  else
+    return false
+  end
+end
+
 return {
   table_copy_into = table_copy_into,
   table_depth_first_visit = table_depth_first_visit,
@@ -117,4 +188,9 @@ return {
   table_pop = table_pop,
   table_get_last = table_get_last,
   table_clone = table_clone,
+  table_key_diff = table_key_diff,
+  table_array_to_set = table_array_to_set,
+  table_array_items_by_id = table_array_items_by_id,
+  table_array_find_by = table_array_find_by,
+  table_is_empty = table_is_empty,
 }

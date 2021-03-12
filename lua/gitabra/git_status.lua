@@ -3,6 +3,7 @@ local job = require("gitabra.job")
 local outliner = require("gitabra.outliner")
 local api = vim.api
 local patch_parser = require("gitabra.patch_parser")
+local md5 = require("gitabra.md5")
 
 local function git_get_branch()
   return u.system_async('git branch --show-current', {splitlines=true})
@@ -50,10 +51,11 @@ local function status_letter_name(letter)
 end
 
 local function status_info()
+  local root_dir_j = u.git_root_dir_j()
   local branch_j = git_get_branch()
   local branch_msg_j = git_branch_commit_msg()
   local status_j = git_status()
-  local jobs = {branch_j, branch_msg_j, status_j}
+  local jobs = {root_dir_j, branch_j, branch_msg_j, status_j}
 
   local wait_result = job.wait_all(jobs, 1000)
   if not wait_result then
@@ -97,6 +99,7 @@ local function status_info()
   commit_msg = commit_msg and commit_msg:sub(2, -2) or "No commits yet"
 
   return {
+    git_root = root_dir_j.output[1],
     header = string.format("[%s] %s", branch_j.output[1], commit_msg),
     files = files,
     untracked = untracked,
@@ -191,9 +194,7 @@ end
 
 local current_status_screen
 
-local function get_sole_status_screen()
-  local sc = current_status_screen or {}
-
+local function setup_status_screen(sc)
   -- Create a new window if the old one is invalid
   if not (sc.bufnr and api.nvim_buf_is_valid(sc.bufnr)) then
     local bufnr = find_existing_status_buffer()
@@ -216,8 +217,12 @@ local function get_sole_status_screen()
 
   api.nvim_set_current_win(sc.winnr)
   api.nvim_set_current_buf(sc.bufnr)
-  current_status_screen = sc
+  return sc
+end
 
+local function get_sole_status_screen()
+  local sc = current_status_screen or {}
+  current_status_screen = setup_status_screen(sc)
   return current_status_screen
 end
 
@@ -302,14 +307,91 @@ local function make_file_node(filename)
   }
 end
 
+local function node_id(node)
+  if node.id then
+    return node.id
+  elseif node.md5 then
+    return node.md5
+  else
+    node.md5 = md5.sumhexa(table.concat(node.text, "\n"))
+    return node.md5
+  end
+end
+
+local function reconcile_outline(old_outline, new_outline)
+  local q = require('gitabra.list').new()
+
+  -- We're going to start a breadth first traversal that walks
+  -- through the two trees at the same time.
+  q:push_right({old_outline.root, new_outline.root})
+
+  while not q:is_empty() do
+    -- print("iteration starts")
+    local node_o, node_n = unpack(q:pop_left())
+    -- print("working on:", node_o, node_n)
+    -- print("working on:", node_id(node_o), node_id(node_n))
+
+    if node_o.children or node_n.children then
+      local cs_o = node_o.children or {}
+      local cs_n = node_n.children or {}
+
+      local diff = u.table_key_diff(
+        u.table_array_items_by_id(cs_o, node_id),
+        u.table_array_items_by_id(cs_n, node_id))
+
+
+      -- Since we have cs_n(children of this node in new tree),
+      -- we know the exact order the nodes should be in.
+      -- All we have to do is to build an array that appear to have the
+      -- same order, but using existing old nodes whenever possible.
+      -- This allows us to carry old states over.
+      local cs_o_by_id = u.table_array_items_by_id(cs_o, node_id)
+      local cs_n_by_id = u.table_array_items_by_id(cs_n, node_id)
+
+      local children = {}
+      for _, node in ipairs(cs_n) do
+        table.insert(children, cs_o_by_id[node_id(node)] or node)
+      end
+      node_o.children = children
+
+      -- Continue our breadth first traversal.
+      -- Usually, we do this by adding all current children of this node
+      -- into the queue of nodes to be visited.
+      --
+      -- However, we do not need to visit newly added nodes, since they are
+      -- nodes from the new tree that have been linked in directly. All child
+      -- nodes stemming from there will be identical to content in the new tree.
+      -- We also do not need to visit the removed nodes, since they are no longer
+      -- part of the tree.
+      --
+      -- So, to continue our bread first traversal, and reconcile the rest of the
+      -- tree, we only need to visit the nodes appears to have not changed.
+
+      for _, id in ipairs(diff.common) do
+        -- print("adding to q:", id)
+        -- print("adding nodes:", cs_o_by_id[id], cs_n_by_id[id])
+        q:push_right({cs_o_by_id[id], cs_n_by_id[id]})
+      end
+      -- print("before:", vim.inspect(cs_o))
+      -- print("after:", vim.inspect(children))
+    end
+
+  end
+
+  return old_outline
+end
+
 local function gitabra_status()
   local st_info = status_info()
   local patches = patch_infos()
 
-  local sc = get_sole_status_screen()
+  local sc_o = get_sole_status_screen()
+  local sc_n = {bufnr = sc_o.bufnr,
+    winnr = sc_o.winnr
+  }
 
   --------------------------------------------------------------------
-  local outline = outliner.new({buffer = sc.bufnr})
+  local outline = outliner.new({buffer = sc_n.bufnr})
 
   -- We're going to add a bunch nodes/content to the buffer.
   -- For each node, we're going to add some text and an extmark on it.
@@ -373,13 +455,38 @@ local function gitabra_status()
   -- Place the new outline into the global sc before any nodes & content are added.
   -- `get_fold_level` will be called by nvim as nodes are added to the outline.
   -- The global sc is the only way that function can find the currently active outline.
-  sc.outline = outline
-  sc.patches = patches
+  sc_n.outline = outline
+  sc_n.patches = patches
   --------------------------------------------------------------------
 
-  local lineno = vim.fn.line(".")
-  outline:refresh()
-  -- print(string.format("Outline refresh completed: [%f]", stop-start))
+  -- Looking at different git repo than last time? Use the new state
+  local is_same_git_root = sc_o.git_root == sc_n.git_root
+  if not is_same_git_root then
+    current_status_screen = sc_n
+
+  -- Is it the first time we're starting gitabra_status?
+  -- The old state would have no outline it was displaying.
+  elseif not sc_o.outline then
+    current_status_screen = sc_n
+
+  -- The user have presumably slightly updated the outline tree.
+  -- Figure out what changed.
+  else
+    current_status_screen.outline = reconcile_outline(sc_o.outline, sc_n.outline)
+    current_status_screen.patches = sc_n.patches
+  end
+
+  -- Retain the current lineno or move to the beginning of the buffer
+  -- depending on if we're refreshing the outline or building a completely new one
+  local lineno
+  if is_same_git_root then
+    lineno = vim.fn.line(".")
+  else
+    lineno = 0
+  end
+
+  current_status_screen.outline:refresh()
+
   vim.cmd(tostring(lineno))
 end
 
@@ -532,4 +639,5 @@ return {
   get_sole_status_screen = get_sole_status_screen,
   toggle_fold_at_current_line = toggle_fold_at_current_line,
   stage_hunk = stage_hunk,
+  reconcile_status_state = reconcile_status_state,
 }

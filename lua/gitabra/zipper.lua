@@ -26,6 +26,12 @@ function M.new(root, children_fn)
   return o
 end
 
+function M:set_new_root(node)
+  path = {node}
+  path_idxs = {0}
+  root = root
+end
+
 function M:set_path(path_to_node)
   local path = {self.root}
   local path_idxs = {0}
@@ -70,6 +76,9 @@ end
 -- Returns true if navigation succeeded
 function M:to_child_node(child_node)
   local cs = self:children()
+  if child_node == self then
+    return false
+  end
   for i, c in ipairs(cs) do
     if c == child_node then
       u.table_push(self.path, c)
@@ -130,6 +139,12 @@ end
 function M:children()
   local curnode = self:node()
   return get_children(self, curnode)
+end
+
+function M:set_children(cs)
+  local curnode = self:node()
+  assert(type(self.children_fn) == "string")
+  curnode[self.children_fn] = cs
 end
 
 -- Returns whether the current node has child nodes or not

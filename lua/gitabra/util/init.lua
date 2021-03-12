@@ -223,26 +223,6 @@ local function partition_iterator(table, tuple_size, step)
   end
 end
 
--- Returns a new table with that contains all items where the predicate returned true
-local function filter(table, pred)
-  local result = {}
-  for _, v in ipairs(table) do
-    if pred(v) then
-      ut.table_push(result, v)
-    end
-  end
-  return result
-end
-
--- Applies `func` to each value in the table
--- Note that this alters the values in-place
-local function map(table, func)
-  for i, v in ipairs(table) do
-    table[i] = func(v)
-  end
-  return table
-end
-
 local function remove_trailing_newlines(str)
   local result = string.gsub(str, "[\r\n]+$", "")
   return result
@@ -260,10 +240,14 @@ local function within_region(region, lineno)
   end
 end
 
+local function git_root_dir_j()
+  return system_async("git rev-parse --show-toplevel", {splitlines=true})
+end
+
 local function git_root_dir()
-  local j = system_async("git rev-parse --show-toplevel")
+  local j = git_root_dir_j()
   job.wait(j, 500)
-  return remove_trailing_newlines(j.output[1])
+  return j.output[1]
 end
 
 local function git_dot_git_dir()
@@ -308,6 +292,7 @@ local function nvim_commands(str, strip_leading_whitespace)
   end
 end
 
+
 return ut.table_copy_into({
     lines = lines,
     lines_array = lines_array,
@@ -319,14 +304,14 @@ return ut.table_copy_into({
     buf_padlines_to = buf_padlines_to,
     partition = partition,
     partition_iterator = partition_iterator,
-    filter = filter,
-    map = map,
     remove_trailing_newlines = remove_trailing_newlines,
     selected_region = selected_region,
     within_region = within_region,
     nanotime = nanotime,
+    git_root_dir_j = git_root_dir_j,
     git_root_dir = git_root_dir,
     git_dot_git_dir = git_dot_git_dir,
-    nvim_create_augroups = nvim_create_augroups,
     nvim_commands = nvim_commands,
-  }, ut)
+  },
+  ut,
+  require('gitabra.util.functional'))
