@@ -308,10 +308,6 @@
 
     )
 
-  ; (st.reconcile_status_state {:outline (outliner.new({:root {:text ["hello" "world"]}}})
-  ;                            {:outline {:root {:text ["hello" "world"]}}})
-
-
   (st.reconcile_status_state {:outline (outliner.new {:root {:children [{:text ["hello" "world"]
                                                                          :hello :world
                                                                          :children [{:text ["Traveler"]
@@ -331,6 +327,4 @@
                                                                                     {:text ["Greys"]}]}
                                                                         {:text ["what's" "up"]}]} })}
                              )
-
-(next nil)
 )

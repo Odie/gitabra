@@ -9,6 +9,23 @@ local namespace_id = api.nvim_create_namespace("gitabra.outliner")
 local linemark_ns = api.nvim_create_namespace("gitabra.outliner/linemark")
 M.namespace_id = namespace_id
 
+local disclosure_sign_group = "disclosure_sign_group"
+local collapsed_sign_name = "gitabra_outline_collapsed"
+local expanded_sign_name = "gitabra_outline_expanded"
+
+M.module_initialized = false
+local function module_initialize()
+  if M.module_initialized then
+    return
+  end
+
+  -- ">": Unicode: U+003E, UTF-8: 3E
+  vim.fn.sign_define(collapsed_sign_name, {text = ">"})
+
+  -- "⋁": Unicode U+22C1, UTF-8: E2 8B 81
+  vim.fn.sign_define(expanded_sign_name, {text = "⋁"})
+  M.module_initialized = true
+end
 
 local function node_debug_text(node)
   local text = node.id or node.text
@@ -102,6 +119,7 @@ function M:lineno_from_node(node)
 end
 
 function M.new(o_in)
+  module_initialize()
   local o = o_in or {}
   o.root = o.root or {}
   o.root.id = "outliner-root"
@@ -142,23 +160,26 @@ function M:add_node(parent_node, child_node)
   return child_node
 end
 
-function M:delete_all_linemarks()
-  -- Cleanup all known linemarks in the outline
-  for node in u.table_depth_first_visit(self.root) do
-    if node.linemark then
-      -- print("deleting linemark:", node.linemark)
-      api.nvim_buf_del_extmark(self.buffer, linemark_ns, node.linemark)
-      node.linemark = nil
-    end
-  end
-
-  -- Just in case... clear everything in the namespace, which should
-  -- only include linemarks
+function delete_all_linemarks(self)
   api.nvim_buf_clear_namespace(self.buffer, linemark_ns, 0, -1)
 end
 
-function M:delete_all_text()
+function delete_all_disclosure_signs(self)
+  vim.fn.sign_unplace(disclosure_sign_group, {buffer = self.buffer})
+end
+
+function delete_all_text(self)
   api.nvim_buf_set_lines(self.buffer, 0, -1, true, {})
+end
+
+-- Clean up node data that should be temporary.
+function cleanup_node_transients(self)
+  for node in u.table_depth_first_visit(self.root) do
+    if node.linemark then
+      node.linemark = nil
+      node.sign_id = nil
+    end
+  end
 end
 
 function M:refresh()
@@ -167,8 +188,10 @@ function M:refresh()
     vim.bo[self.buffer].modifiable = true
   end
 
-  self:delete_all_linemarks()
-  self:delete_all_text()
+  cleanup_node_transients(self)
+  delete_all_linemarks(self)
+  delete_all_disclosure_signs(self)
+  delete_all_text(self)
 
   -- Start a new zipper and move to the first child of the root node
   local z = self:node_zipper()
@@ -192,6 +215,18 @@ function M:refresh()
     -- Add extmark at the same location
  	  node.linemark = api.nvim_buf_set_extmark(self.buffer, linemark_ns, lineno, 0, {})
     node.lineno = lineno
+
+    -- Place a sign depending on if there are child nodes or not
+    local cs = z:children()
+    if cs and not u.table_is_empty(cs) then
+      local sign_name
+      if node.collapsed then
+        sign_name = collapsed_sign_name
+      else
+        sign_name = expanded_sign_name
+      end
+      node.sign_id = vim.fn.sign_place(0, disclosure_sign_group, sign_name, self.buffer, {lnum = lineno+1})
+    end
 
     -- If this node has been collapsed, move on to the next sibling branch
     if node.collapsed then
