@@ -292,6 +292,10 @@ local function nvim_commands(str, strip_leading_whitespace)
   end
 end
 
+local function math_clamp(v, min_val, max_val)
+  return math.min(math.max(v, min_val), max_val)
+end
+
 
 return ut.table_copy_into({
     lines = lines,
@@ -312,6 +316,7 @@ return ut.table_copy_into({
     git_root_dir = git_root_dir,
     git_dot_git_dir = git_dot_git_dir,
     nvim_commands = nvim_commands,
+    math_clamp = math_clamp,
   },
   ut,
   require('gitabra.util.functional'))

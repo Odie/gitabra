@@ -5,6 +5,12 @@ local api = vim.api
 local patch_parser = require("gitabra.patch_parser")
 local md5 = require("gitabra.md5")
 
+-- Node types
+local type_section = "section"
+local type_file = "file"
+local type_hunk_header = "hunk header"
+local type_hunk_content = "hunk content"
+
 local function git_get_branch()
   return u.system_async('git branch --show-current', {split_lines=true})
 end
@@ -147,6 +153,7 @@ local function setup_keybinds(bufnr)
   set_keymap('n', '<tab>', '<cmd>lua require("gitabra.git_status").toggle_fold_at_current_line()<cr>', opts)
   set_keymap('n', 's', '<cmd>lua require("gitabra.git_status").stage_hunk()<cr>', opts)
   set_keymap('v', 's', '<cmd>lua require("gitabra.git_status").stage_hunk()<cr>', opts)
+  set_keymap('n', '<enter>', '<cmd>lua require("gitabra.git_status").jump_to_location()<cr>', opts)
   set_keymap('n', 'q', '<cmd>close<cr>', opts)
   set_keymap('n', 'cc', '<cmd>lua require("gitabra.git_commit").gitabra_commit()<cr>', opts)
 end
@@ -272,21 +279,124 @@ local function toggle_fold_at_current_line()
   vim.cmd(tostring(node.lineno+1))
 end
 
-local type_section = "section"
-local type_file = "file"
-local type_hunk_header = "hunk header"
-local type_hunk_content = "hunk content"
 
-local function populate_hunks(outline, parent_node, patch_info, filepath)
+-- Return the type of hunk line we are looking at.
+-- Returns either "+", "-", or "common"
+local function hunk_line_type(line)
+  local char = line:sub(1,1)
+  if char == "+" then
+    return "+"
+  elseif char == "-" then
+    return "-"
+  else
+    return "common"
+  end
+end
+
+-- Given some hunk lines, count (up to line_limit) the number of
+-- lines relavant to a specific type
+local function hunk_lines_count_type(lines, line_type, line_limit)
+  local count = 0
+  if not line_limit then
+    line_limit = #lines
+  else
+    line_limit = u.math_clamp(line_limit, 1, #lines)
+  end
+
+  for i=1, line_limit do
+    local line = lines[i]
+    local inc = false
+    local t = hunk_line_type(line)
+    if (line_type == "+" or line_type == "common") and (t == "+" or t == "common") then
+      count = count + 1
+    elseif line_type == "-" and (t == "-" or t == "common") then
+      count = count + 1
+    end
+  end
+
+  return count
+end
+
+-- Assuming we have a zipper that's targetting a hunk,
+-- build a description to make it easier ask useful question with
+local function hunk_context(z)
+  local result = {}
+  local node
+
+  node = z:node()
+  if node.type == type_hunk_content then
+    result[type_hunk_content] = node
+    z:up()
+    node = z:node()
+  end
+
+  if node.type == type_hunk_header then
+    result[type_hunk_header] = node
+    z:up()
+    node = z:node()
+  end
+
+  if node.type == type_file then
+    result[type_file] = node
+    z:up()
+    node = z:node()
+  end
+
+  if node.type == type_section then
+    result[type_section] = node
+  end
+
+  return result
+end
+
+local function hc_target_full_filepath(hc)
+  local file = hc[type_file]
+  if file then
+    return string.format("%s/%s", u.git_root_dir(), file.text[1])
+  end
+end
+
+-- Jumps to the file and line of the hunk line under the cursor
+local function jump_to_location()
+  local lineno = vim.fn.line(".") - 1
+  local outline = get_sole_status_screen().outline
+  if not outline then
+    return
+  end
+
+  local z = outline:node_zipper_at_lineno(lineno)
+  if not z then
+    return
+  end
+
+  local hc = hunk_context(z)
+
+  -- Is the user targetting a specific line of a hunk?
+  if hc[type_hunk_content] then
+    local hunk_start = patch_parser.parse_hunk_header(hc[type_hunk_header].text[1])[3]
+    local rellineno = lineno - hc[type_hunk_content].lineno + 1
+    local line_type = hunk_line_type(hc[type_hunk_content].text[rellineno])
+    if line_type == "-" then
+      line_type = "common"
+    end
+    local count = hunk_lines_count_type(hc[type_hunk_content].text, line_type, rellineno)
+    vim.cmd(string.format("e +%i %s", hunk_start+count-1, hc_target_full_filepath(hc)))
+  elseif hc[type_hunk_header] then
+    local hunk_start = patch_parser.parse_hunk_header(hc[type_hunk_header].text[1])[3]
+    vim.cmd(string.format("e +%i %s", hunk_start, hc_target_full_filepath(hc)))
+  elseif hc[type_file] then
+    vim.cmd(string.format("e %s", hc_target_full_filepath(hc)))
+  end
+end
+
+
+local function populate_hunks(outline, file_node, patch_info, filepath)
   local diff = patch_parser.find_file(patch_info.patch_info, filepath)
-  -- print("looking for path:", vim.inspect(filepath))
-  -- print("in:", vim.inspect(patch_info))
-  -- print("found diff:", vim.inspect(diff))
   if diff then
     for _, hunk in ipairs(diff.hunks) do
       -- Add hunk header as its own node
       -- These look something like "@@ -16,10 +17,14 @@"
-      local heading = outline:add_node(parent_node, {
+      local heading = outline:add_node(file_node, {
           text = hunk.header_text,
           type = type_hunk_header,
         })
@@ -639,5 +749,5 @@ return {
   get_sole_status_screen = get_sole_status_screen,
   toggle_fold_at_current_line = toggle_fold_at_current_line,
   stage_hunk = stage_hunk,
-  reconcile_status_state = reconcile_status_state,
+  jump_to_location = jump_to_location,
 }
