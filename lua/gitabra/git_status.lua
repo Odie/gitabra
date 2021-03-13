@@ -6,15 +6,15 @@ local patch_parser = require("gitabra.patch_parser")
 local md5 = require("gitabra.md5")
 
 local function git_get_branch()
-  return u.system_async('git branch --show-current', {splitlines=true})
+  return u.system_async('git branch --show-current', {split_lines=true})
 end
 
 local function git_branch_commit_msg()
-  return u.system_async({"git", "show", "--no-patch", "--format='%h %s'"}, {splitlines=true})
+  return u.system_async({"git", "show", "--no-patch", "--format='%h %s'"}, {split_lines=true})
 end
 
 local function git_status()
-  return u.system_async("git status --porcelain", {splitlines=true})
+  return u.system_async("git status --porcelain", {split_lines=true})
 end
 
 local function git_diff_unstaged()

@@ -45,7 +45,7 @@ local function system_async(cmd, opt)
           print("ERROR: "..err)
         end
         if data then
-          if opt.splitlines then
+          if opt.split_lines then
             for line in lines(data) do
               table.insert(result.output, line)
             end
@@ -59,7 +59,7 @@ local function system_async(cmd, opt)
           print("ERROR: "..err)
         end
         if data then
-          if opt.splitlines then
+          if opt.split_lines then
             for line in lines(data) do
               table.insert(result.output, line)
             end
@@ -241,7 +241,7 @@ local function within_region(region, lineno)
 end
 
 local function git_root_dir_j()
-  return system_async("git rev-parse --show-toplevel", {splitlines=true})
+  return system_async("git rev-parse --show-toplevel", {split_lines=true})
 end
 
 local function git_root_dir()
