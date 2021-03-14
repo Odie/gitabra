@@ -63,10 +63,10 @@ local function status_info()
   local status_j = git_status()
   local jobs = {root_dir_j, branch_j, branch_msg_j, status_j}
 
-  local wait_result = job.wait_all(jobs, 1000)
+  local wait_result = job.wait_all(jobs, 2000)
   if not wait_result then
     local funcname = debug.getinfo(1, "n").name
-    error(string.format("%s: unable to complete git commands withint alotted time", funcname))
+    error(string.format("%s: unable to complete git commands within the alotted time", funcname))
   end
 
 
@@ -119,10 +119,10 @@ local function patch_infos()
   local staged_j = git_diff_staged()
 
   local jobs = {unstaged_j, staged_j}
-  local wait_result = job.wait_all(jobs, 1000)
+  local wait_result = job.wait_all(jobs, 2000)
   if not wait_result then
     local funcname = debug.getinfo(1, "n").name
-    error(string.format("%s: unable to complete git commands withint alotted time", funcname))
+    error(string.format("%s: unable to complete git commands within the alotted time", funcname))
   end
 
   local info = {
