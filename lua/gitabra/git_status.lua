@@ -36,11 +36,22 @@ local function git_apply_patch(direction, patch_text)
   if direction == "unstage" then
     table.insert(cmd, "--reverse")
   end
-
   table.insert(cmd, "-")
+
   local j = u.system_async(cmd)
   j.job:send(patch_text)
+  return j
+end
 
+local function git_discard_hunk(include_staged, patch_text)
+  local cmd = {"git", "apply", "--reverse", "--whitespace=nowarn"}
+  if include_staged then
+    table.insert(cmd, "--index")
+  end
+  table.insert(cmd, "-")
+
+  local j = u.system_async(cmd)
+  j.job:send(patch_text)
   return j
 end
 
@@ -154,6 +165,8 @@ local function setup_keybinds(bufnr)
   set_keymap('n', 's', '<cmd>lua require("gitabra.git_status").stage_hunk()<cr>', opts)
   set_keymap('v', 's', '<cmd>lua require("gitabra.git_status").stage_hunk()<cr>', opts)
   set_keymap('n', '<enter>', '<cmd>lua require("gitabra.git_status").jump_to_location()<cr>', opts)
+  set_keymap('n', 'x', '<cmd>lua require("gitabra.git_status").discard_hunk()<cr>', opts)
+  set_keymap('v', 'x', '<cmd>lua require("gitabra.git_status").discard_hunk()<cr>', opts)
   set_keymap('n', 'q', '<cmd>close<cr>', opts)
   set_keymap('n', 'cc', '<cmd>lua require("gitabra.git_commit").gitabra_commit()<cr>', opts)
 end
@@ -354,6 +367,16 @@ local function hc_target_full_filepath(hc)
   if file then
     return string.format("%s/%s", u.git_root_dir(), file.text[1])
   end
+end
+
+local function outline_zipper_at_current_line()
+  local lineno = vim.fn.line(".") - 1
+  local outline = get_sole_status_screen().outline
+  if not outline then
+    return
+  end
+
+  return outline:node_zipper_at_lineno(lineno)
 end
 
 -- Jumps to the file and line of the hunk line under the cursor
@@ -603,7 +626,7 @@ end
 -- Given the contents of a hunk and the region that was selected (0 indexed),
 -- return relevant lines and line count info that can be used to build
 -- the hunk header and the hunk content
-local function partial_hunk(hunk_content, region)
+local function partial_hunk(hunk_content, region, for_discard)
   local unmarked_lines = 0
   local removed_lines = 0
   local added_lines = 0
@@ -611,26 +634,29 @@ local function partial_hunk(hunk_content, region)
 
   for i, line in ipairs(hunk_content) do
     i = i - 1
-    local type
-    if line:match("^+") then
-      type = "added"
-    elseif line:match("^-") then
-      type = "removed"
-    else
-      type = "unmarked"
-    end
+    local type = hunk_line_type(line)
 
     if u.within_region(region, i) then
-      if type == "added" then
+      if type == "+" then
         added_lines = added_lines + 1
         table.insert(content, line)
-      elseif type == "removed" then
+      elseif type == "-" then
         removed_lines = removed_lines + 1
         table.insert(content, line)
       end
+    else
+      -- If we're trying to unstage or discard something, any lines
+      -- that have been added will already be in the index or working tree.
+      -- If those lines have not been selected for unstaging or discarding,
+      -- then they need to become the context lines. Otherwise, applying
+      -- a reverse patch would fail becaue the context lines seem incorrect.
+      if for_discard and type == "+" then
+        unmarked_lines = unmarked_lines + 1
+        table.insert(content, " "..line:sub(2))
+      end
     end
 
-    if type == "unmarked" then
+    if type == "common" then
       unmarked_lines = unmarked_lines + 1
       table.insert(content, line)
     end
@@ -644,46 +670,18 @@ local function partial_hunk(hunk_content, region)
   }
 end
 
-local function stage_hunk()
-  local lineno = vim.fn.line(".") - 1
-  local sc = get_sole_status_screen()
-  local outline = sc.outline
-  if not outline then
-    return
-  end
-
-  local z = outline:node_zipper_at_lineno(lineno)
-  if not z then
-    return
-  end
-
-  local patches = sc.patches
-  local node = z:node()
-
-  -- If we're not pointed at a hunk, we can't stage it, so do nothing
-  if not (node.type == type_hunk_content or node.type == type_hunk_header) then
-    return
-  end
-
-  -- Go up to the hunk header
-  if node.type ~= type_hunk_header then
-    z:up()
-  end
-
-  local hunk_header_node = z:node()
-  assert(hunk_header_node.type == type_hunk_header)
-
-  local hunk_content_node = hunk_header_node.children[1]
-
-  z:up()
-  local file_node = z:node()
-  assert(file_node.type == type_file)
-
-  z:up()
-  local section_node = z:node()
-  assert(section_node.type == type_section)
-
-  local patch = patches[section_node.id]
+-- Using the given hunk_context and the currently selected lines,
+-- prepare a patch that can be used with git-apply.
+--
+-- Patch generation will behave slightly different depending on
+-- the "direction". If we're trying to discard or unstage something
+-- AND have selected only part of the hunk, a little bit more work
+-- is required to get the correct context lines so the patch can
+-- be applied cleanly. See `partial_hunk` for details.
+--
+local function patch_from_selected_hunk(hc, for_discard)
+  local patches = get_sole_status_screen().patches
+  local patch = patches[hc[type_section].id]
 
   -- Generate a patch for the selected hunk
   -- To do that, we need a file diff header, the hunk header, and the hunk contents
@@ -693,20 +691,20 @@ local function stage_hunk()
   --
   -- To get the hunk header and hunk content, we're going to grab both from the outline directly.
 
-  local file_diff = patch_parser.find_file(patch.patch_info, file_node.text[1])
+  local file_diff = patch_parser.find_file(patch.patch_info, hc[type_file].text[1])
   local diff_header = patch_parser.file_diff_get_header_contents(file_diff, patch.patch_text)
   diff_header = u.remove_trailing_newlines(diff_header)
 
-  local hunk_header = hunk_header_node.text[1]
-  local hunk_content = hunk_content_node.text
+  local hunk_header = hc[type_hunk_header].text[1]
+  local hunk_content = hc[type_hunk_content].text
 
   -- If the user has selected just part of the hunk, we need to
   -- make some adjustments to the header and the content
-  local region = u.selected_region()
-  if region[1] ~= region[2] then
-    local offset = hunk_content_node.lineno
-    local result = partial_hunk(hunk_content_node.text, {region[1]-offset, region[2]-offset})
-    local hh = patch_parser.parse_hunk_header(hunk_header_node.text[1])
+  if vim.fn.mode() == "V" then
+    local region = u.selected_region()
+    local offset = hc[type_hunk_content].lineno
+    local result = partial_hunk(hc[type_hunk_content].text, {region[1]-offset, region[2]-offset}, for_discard)
+    local hh = patch_parser.parse_hunk_header(hc[type_hunk_header].text[1])
     hh[2] = result.unmarked + result.removed
     hh[4] = result.unmarked + result.added
 
@@ -724,21 +722,67 @@ local function stage_hunk()
     table.insert(lines, v)
   end
   table.insert(lines, "")
+  return table.concat(lines, "\n")
+end
+
+local function stage_hunk()
+  local z = outline_zipper_at_current_line()
+  local node = z:node()
+
+  -- If we're not pointed at a hunk, we can't stage it, so do nothing
+  if not (node.type == type_hunk_content or node.type == type_hunk_header) then
+    return
+  end
+
+  local hc = hunk_context(z)
 
   local direction
-  if section_node.id == "unstaged" then
+  if hc[type_section].id == "unstaged" then
     direction = "stage"
   else
     direction = "unstage"
   end
 
-  local j = git_apply_patch(direction, table.concat(lines, "\n"))
+  local patch = patch_from_selected_hunk(hc, direction=="unstage")
+
+
+  local j = git_apply_patch(direction, patch)
   job.wait(j, 100)
 
-  -- The state of the hunks have changed
-  -- Simply refreshing the outline will not reflect the new state
-  -- We need to run `git diff` again and rebuild everything
-  gitabra_status()
+  if not u.table_is_empty(j.err_output) then
+    print(vim.inspect(j.err_output))
+    print(string.format("%s failed", direction))
+  else
+    -- The state of the hunks have changed
+    -- Simply refreshing the outline will not reflect the new state
+    -- We need to run `git diff` again and rebuild everything
+    gitabra_status()
+  end
+end
+
+local function discard_hunk()
+  local choice = vim.fn.confirm("Really discard this hunk?", "y\nN", 2)
+  if choice ~= 1 then
+    return
+  end
+
+  local z = outline_zipper_at_current_line()
+  local node = z:node()
+  if not (node.type == type_hunk_content or node.type == type_hunk_header) then
+    return
+  end
+
+  local hc = hunk_context(z)
+  local patch = patch_from_selected_hunk(hc, true)
+  local include_staged = hc[type_section].id == "staged"
+
+  local j = git_discard_hunk(include_staged, patch)
+  job.wait(j, 1000)
+  if not u.table_is_empty(j.err_output) then
+    vim.cmd("redraw | echom 'Discard failed'")
+  else
+    gitabra_status()
+  end
 end
 
 return {
@@ -750,4 +794,5 @@ return {
   toggle_fold_at_current_line = toggle_fold_at_current_line,
   stage_hunk = stage_hunk,
   jump_to_location = jump_to_location,
+  discard_hunk = discard_hunk,
 }
