@@ -254,12 +254,12 @@ local function git_dot_git_dir()
   return git_root_dir() .. "/.git"
 end
 
-local function is_empty(str)
+local function str_is_empty(str)
   return str == nil or s == ""
 end
 
-local function is_really_empty(str)
-  if is_empty(str) then
+local function str_is_really_empty(str)
+  if str_is_empty(str) then
     return true
   end
 
@@ -283,7 +283,7 @@ local function nvim_commands(str, strip_leading_whitespace)
     local idx = -1
 
     for line in lines(str) do
-      local empty = is_really_empty(line)
+      local empty = str_is_really_empty(line)
       if idx == -1 and not empty then
         idx = first_nonwhitespace_idx(str)
       end
@@ -317,6 +317,8 @@ return ut.table_copy_into({
     git_dot_git_dir = git_dot_git_dir,
     nvim_commands = nvim_commands,
     math_clamp = math_clamp,
+    str_is_empty = str_is_empty,
+    str_is_really_empty = str_is_really_empty,
   },
   ut,
   require('gitabra.util.functional'))

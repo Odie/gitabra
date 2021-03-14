@@ -50,14 +50,16 @@ local function gitabra_commit()
         })
 
     -- The shell script should send back the location of the commit message file
-    job.wait_for(j, 200, function()
-        if #j.output ~= 0 then
+    job.wait_for(j, 3000, function()
+        if not u.table_is_empty(j.output) then
             return true
         end
     end)
+    assert(not u.str_is_really_empty(j.output[1]), "Expected to receive the EDITMSG file path, but timedout")
 
     -- Start editing the commit message file
     -- vim.cmd(string.format('e %s', vim.fn.fnameescape(u.git_dot_git_dir().."/COMMIT_EDITMSG")))
+
     vim.cmd(string.format('e %s', vim.fn.fnameescape(u.remove_trailing_newlines(j.output[1]))))
 
     -- Make sure this buffer goes away once it is hidden
