@@ -55,6 +55,15 @@ local function git_discard_hunk(include_staged, patch_text)
   return j
 end
 
+local function git_add(rel_filepath)
+  return u.system_async({"git", "add", rel_filepath})
+end
+
+local function git_reset_file(rel_filepath)
+  return u.system_async({"git", "reset", rel_filepath})
+end
+
+
 local function status_letter_name(letter)
   if "M" == letter then return "modified"
   elseif "A" == letter then return "added"
@@ -91,6 +100,8 @@ local function status_info()
   for _, line in ipairs(status_j.output) do
     local fstat = line:sub(1, 2)
     local fname = line:sub(4)
+    fname = fname:match("\"(.-)\"") or fname
+
     local entry = {
       index = status_letter_name(fstat:sub(1, 1)),
       working = status_letter_name(fstat:sub(2, 2)),
@@ -162,8 +173,8 @@ local function setup_keybinds(bufnr)
   local function set_keymap(...) vim.api.nvim_buf_set_keymap(bufnr, ...) end
   local opts = { noremap=true, silent=true }
   set_keymap('n', '<tab>', '<cmd>lua require("gitabra.git_status").toggle_fold_at_current_line()<cr>', opts)
-  set_keymap('n', 's', '<cmd>lua require("gitabra.git_status").stage_hunk()<cr>', opts)
-  set_keymap('v', 's', '<cmd>lua require("gitabra.git_status").stage_hunk()<cr>', opts)
+  set_keymap('n', 's', '<cmd>lua require("gitabra.git_status").stage()<cr>', opts)
+  set_keymap('v', 's', '<cmd>lua require("gitabra.git_status").stage()<cr>', opts)
   set_keymap('n', '<enter>', '<cmd>lua require("gitabra.git_status").jump_to_location()<cr>', opts)
   set_keymap('n', 'x', '<cmd>lua require("gitabra.git_status").discard_hunk()<cr>', opts)
   set_keymap('v', 'x', '<cmd>lua require("gitabra.git_status").discard_hunk()<cr>', opts)
@@ -333,39 +344,54 @@ end
 -- Assuming we have a zipper that's targetting a hunk,
 -- build a description to make it easier ask useful question with
 local function hunk_context(z)
-  local result = {}
+  local hc = {}
   local node
 
   node = z:node()
   if node.type == type_hunk_content then
-    result[type_hunk_content] = node
+    hc[type_hunk_content] = node
     z:up()
     node = z:node()
   end
 
   if node.type == type_hunk_header then
-    result[type_hunk_header] = node
+    hc[type_hunk_header] = node
     z:up()
     node = z:node()
   end
 
   if node.type == type_file then
-    result[type_file] = node
+    hc[type_file] = node
     z:up()
     node = z:node()
   end
 
   if node.type == type_section then
-    result[type_section] = node
+    hc[type_section] = node
   end
 
-  return result
+  -- The zipper may have pointed to a hunk header
+  -- Since a hunk header should only have a single hunk content node attached,
+  -- it's straightforward to fill that in now.
+  -- The rest of the code will not have to deal with these cases.
+  if hc[type_hunk_content] == nil and hc[type_hunk_content] then
+    hc[type_hunk_content] = hc[type_hunk_header].children[1]
+  end
+
+  return hc
 end
 
 local function hc_target_full_filepath(hc)
   local file = hc[type_file]
   if file then
     return string.format("%s/%s", u.git_root_dir(), file.text[1])
+  end
+end
+
+local function hc_target_rel_filepath(hc)
+  local file = hc[type_file]
+  if file then
+    return file.text[1]
   end
 end
 
@@ -725,17 +751,7 @@ local function patch_from_selected_hunk(hc, for_discard)
   return table.concat(lines, "\n")
 end
 
-local function stage_hunk()
-  local z = outline_zipper_at_current_line()
-  local node = z:node()
-
-  -- If we're not pointed at a hunk, we can't stage it, so do nothing
-  if not (node.type == type_hunk_content or node.type == type_hunk_header) then
-    return
-  end
-
-  local hc = hunk_context(z)
-
+local function stage_hunk(hc)
   local direction
   if hc[type_section].id == "unstaged" then
     direction = "stage"
@@ -757,6 +773,44 @@ local function stage_hunk()
     -- Simply refreshing the outline will not reflect the new state
     -- We need to run `git diff` again and rebuild everything
     gitabra_status()
+  end
+end
+
+local function stage_file(hc)
+  local j = git_add(hc_target_rel_filepath(hc))
+  job.wait(j, 500)
+  if not u.table_is_empty(j.err_output) then
+    print(j.err_output[1])
+  else
+    gitabra_status()
+  end
+end
+
+local function unstage_file(hc)
+  local j = git_reset_file(hc_target_rel_filepath(hc))
+  job.wait(j, 500)
+  if not u.table_is_empty(j.err_output) then
+    print(j.err_output[1])
+  else
+    gitabra_status()
+  end
+end
+
+-- Try to stage the item under the cursor
+local function stage()
+  local z = outline_zipper_at_current_line()
+  local node = z:node()
+  local hc = hunk_context(z)
+
+  -- If we're not pointed at a hunk, we can't stage it, so do nothing
+  if node.type == type_hunk_content or node.type == type_hunk_header then
+    stage_hunk(hc)
+  elseif node.type == type_file and (hc[type_section].id == "untracked" or hc[type_section].id == "unstaged") then
+    stage_file(hc)
+  elseif node.type == type_file and hc[type_section].id == "staged" then
+    unstage_file(hc)
+  else
+    print("Oops... Don't know how to stage this yet...")
   end
 end
 
@@ -792,7 +846,7 @@ return {
   setup_window_and_buffer = setup_window_and_buffer,
   get_sole_status_screen = get_sole_status_screen,
   toggle_fold_at_current_line = toggle_fold_at_current_line,
-  stage_hunk = stage_hunk,
+  stage = stage,
   jump_to_location = jump_to_location,
   discard_hunk = discard_hunk,
 }
