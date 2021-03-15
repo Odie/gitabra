@@ -182,12 +182,14 @@ local function setup_keybinds(bufnr)
   set_keymap('n', 'cc', '<cmd>lua require("gitabra.git_commit").gitabra_commit()<cr>', opts)
 end
 
+local status_buf_name = "gitabra:////gitabra_status"
+
 -- Looks through all available buffers and returns the gitabra status buffer if found
 -- This helps us recover the bufnr if it becomes lost. This usually happens when the
 -- module is reloaded and the `current_status_screen` gets lost.
 local function find_existing_status_buffer()
   for _, bufnr in ipairs(api.nvim_list_bufs()) do
-    if api.nvim_buf_get_name(bufnr) == "GitabraStatus" then
+    if api.nvim_buf_get_name(bufnr) == status_buf_name then
       return bufnr
     end
   end
@@ -203,7 +205,7 @@ end
 
 local function setup_buffer()
   local buf = vim.api.nvim_create_buf(true, false)
-  api.nvim_buf_set_name(buf, 'GitabraStatus')
+  api.nvim_buf_set_name(buf, status_buf_name)
   vim.bo[buf].swapfile = false
   vim.bo[buf].buftype = 'nofile'
   vim.bo[buf].filetype = 'GitabraStatus'

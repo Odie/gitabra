@@ -247,26 +247,8 @@
     (print (string.format "Refresh took [%f]" (- stop start)))
     )
 
-  (co.make_editor_script)
-  (def j (u.system_async
-           (u.interp "GIT_EDITOR=${editor_script} git commit"
-                     {:editor_script (co.make_editor_script)})))
-
-  (def j (u.system_async ["sh" "-c" "echo $GIT_EDITOR"]
-                         {:env [(string.format "GIT_EDITOR=%s" (co.make_editor_script))]}))
-
-  (def j (u.system_async ["echo" "$GIT_EDITOR"]
-                         {:env [(string.format "GIT_EDITOR=%s" (co.make_editor_script))]}))
-  j
-  (def j (co.gitabra_commit))
-
   api
   vim.fn
-  (vim.fn.getcwd)
-  (def j (u.git_root_dir))
-  (u.git_dot_git_dir)
-  (u.git_root_dir)
-  (u.git_dot_git_dir)
 
   (u.nvim_create_augroups {:ReleaseGitcommit ["BufWritePost <buffer> lua require()"
                                               "BufDelete <buffer> lua require()" ]})
