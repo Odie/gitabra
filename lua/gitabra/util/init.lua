@@ -37,7 +37,7 @@ local function system_async(cmd, opt)
   }
   opt = opt or {}
 
-	local j = job.new({
+  local j = job.new({
       cmd = cmd,
       opt = opt,
       on_stdout = function(_, err, data)
@@ -224,7 +224,7 @@ local function partition_iterator(table, tuple_size, step)
 end
 
 local function remove_trailing_newlines(str)
-  local result = string.gsub(str, "[\r\n]+$", "")
+  local result, _ = string.gsub(str, "[\r\n]+$", "")
   return result
 end
 
@@ -255,7 +255,7 @@ local function git_dot_git_dir()
 end
 
 local function str_is_empty(str)
-  return str == nil or s == ""
+  return str == nil or str == ""
 end
 
 local function str_is_really_empty(str)
@@ -296,6 +296,64 @@ local function math_clamp(v, min_val, max_val)
   return math.min(math.max(v, min_val), max_val)
 end
 
+local function markup_fn(m)
+  m.type = "markup"
+  return m
+end
+
+local function is_markup(markup)
+  if type(markup) == "table" and markup.type == "markup" then
+    return true
+  else
+    return false
+  end
+end
+
+-- Given a `markup` that represents a string with text with highlghts on specific sections,
+-- Construct the entire string itself, and the locations on the string where highlights should start and stop
+local function markup_flatten(markup, concat_separator)
+  local text = {}
+  local hl = {}
+
+  -- If we're called with a string,
+  -- return a dummy result that we can still process like a markup.
+  if type(markup) == "string" then
+    return {text=markup, hl=hl}
+  end
+
+  local sep_len = 0
+  if concat_separator then
+    sep_len = concat_separator:len()
+  end
+
+  local cursor = 0
+  for _, item in ipairs(markup) do
+    if type(item) == "string" then
+      table.insert(text, item)
+      cursor = cursor + item:len()
+    elseif type(item) == "table" then
+      table.insert(text, item.text)
+      local start = cursor
+      cursor = cursor + item.text:len()
+      table.insert(hl, {
+          start = start,
+          stop = cursor,
+          group = item.group
+      })
+    end
+    cursor = cursor + sep_len
+  end
+
+  return {text=table.concat(text, concat_separator), hl=hl}
+end
+
+local function nvim_synIDattr(synID, what, mode)
+  if not mode then
+    return api.nvim_eval(string.format("synIDattr(%i,'%s')", synID, what))
+  else
+    return api.nvim_eval(string.format("synIDattr(%i,'%s','%s')", synID, what, mode))
+  end
+end
 
 return ut.table_copy_into({
     lines = lines,
@@ -319,6 +377,10 @@ return ut.table_copy_into({
     math_clamp = math_clamp,
     str_is_empty = str_is_empty,
     str_is_really_empty = str_is_really_empty,
+    markup = markup_fn,
+    is_markup = is_markup,
+    markup_flatten = markup_flatten,
+    nvim_synIDattr = nvim_synIDattr,
   },
   ut,
   require('gitabra.util.functional'))

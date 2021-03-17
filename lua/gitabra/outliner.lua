@@ -7,6 +7,7 @@ M.__index = M
 
 local namespace_id = api.nvim_create_namespace("gitabra.outliner")
 local linemark_ns = api.nvim_create_namespace("gitabra.outliner/linemark")
+local highlight_ns = api.nvim_create_namespace("gitabra.outliner/highlight")
 M.namespace_id = namespace_id
 
 local disclosure_sign_group = "disclosure_sign_group"
@@ -135,11 +136,19 @@ function M:node_zipper()
   return zipper.new(self.root, "children")
 end
 
+function node_text_has_markup(lines)
+  for _, line in ipairs(lines) do
+    if u.is_markup(line) then
+      return true
+    end
+  end
+  return false
+end
+
 
 -- Add a `child_node` into the `parent_node`
 -- Return the added child node
 function M:add_node(parent_node, child_node)
-  -- print(">>> Add Node")
   -- Use the root node if a parent node is not specified
   if not parent_node then
     parent_node = self.root
@@ -150,13 +159,34 @@ function M:add_node(parent_node, child_node)
   end
 
   -- Add the child node
+  -- the `text` field in a node indicates a array of lines
+  -- Each line might also be a 'markup, which is itself an array
+  -- For convenience, we'll allow the field to contain just a single
+  -- line input.
   if type(child_node.text) == "string" then
     child_node.text = u.lines_array(child_node.text)
+  elseif u.is_markup(child_node.text) then
+    child_node.text = { child_node.text }
+  end
+
+  if node_text_has_markup(child_node.text) then
+    child_node.has_markup = true
+
+    local text_hls = u.table_copy_into({}, child_node.text)
+    u.map(text_hls, u.markup_flatten, " ")
+    local text_lines = {}
+    for _, item in ipairs(text_hls) do
+      table.insert(text_lines, u.remove_trailing_newlines(item.text))
+    end
+
+    child_node.markup = child_node.text
+    child_node.text = text_lines
+    child_node.text_hls = text_hls
   end
 
   child_node.depth = parent_node.depth + 1
   table.insert(parent_node.children, child_node)
-  -- print("<<< Add Node")
+
   return child_node
 end
 
@@ -192,6 +222,8 @@ function M:refresh()
   delete_all_linemarks(self)
   delete_all_disclosure_signs(self)
   delete_all_text(self)
+  -- We should also delete all highlights here
+  -- Looks like the highlights are deleted along with the text though.
 
   -- Start a new zipper and move to the first child of the root node
   local z = self:node_zipper()
@@ -203,7 +235,8 @@ function M:refresh()
     local node = z:node()
     local parent = z:parent_node()
 
-    -- print(">>>>>>>>>>>>>>>>>>>>>>> looking to add:", node_debug_text(node))
+    -- print("node:", vim.inspect(node))
+    -- print(">>>>>>>>>>>>>>>>>>>>>>> looking to place:", node_debug_text(node))
     -- Determine where we should be placing the text
     local lineno = determine_node_lineno(self, parent, node)
     -- print("**** extmark & content] adding at line:", lineno)
@@ -211,6 +244,15 @@ function M:refresh()
     -- Place the text into the buffer at said location
     u.buf_padlines_to(self.buffer, lineno+#node.text)
  	  api.nvim_buf_set_lines(self.buffer, lineno, lineno+#node.text, true, node.text)
+
+    if node.text_hls then
+      for i, line in ipairs(node.text_hls) do
+        for _, hl in ipairs(line.hl) do
+          -- print(string.format("setting line %i [%i,%i] to %s", lineno+i-1, hl.start, hl.stop, hl.group))
+          api.nvim_buf_add_highlight(self.buffer, highlight_ns, hl.group, lineno+i-1, hl.start, hl.stop)
+        end
+      end
+    end
 
     -- Add extmark at the same location
  	  node.linemark = api.nvim_buf_set_extmark(self.buffer, linemark_ns, lineno, 0, {})

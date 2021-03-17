@@ -76,6 +76,45 @@ local function status_letter_name(letter)
   end
 end
 
+local function hl_group_attr_strs(group_name)
+  local hl_group_id = api.nvim_get_hl_id_by_name(group_name)
+  local target_attrs = {
+    {"fg", "gui"},
+    {"bg", "gui"},
+    {"fg", "cterm"},
+    {"bg", "cterm"},
+  }
+
+  -- Fetch highlight group attributes
+  -- Only keep entries that returned non-emtpy values
+  local attrs = {}
+  for _, item in ipairs(target_attrs) do
+    local val = u.nvim_synIDattr(hl_group_id, unpack(item))
+    if not u.str_is_empty(val) then
+      table.insert(attrs, string.format("%s%s=%s", item[2], item[1], val))
+    end
+  end
+  return attrs
+end
+
+local module_initialized = false
+local function module_initialize()
+  if module_initialized then
+    return
+  end
+
+  vim.cmd("highlight link GitabraBranch Blue")
+
+  local attrs = hl_group_attr_strs("Yellow")
+  vim.cmd(string.format("highlight GitabraStatusSection %s gui=bold cterm=bold", table.concat(attrs, " ")))
+
+  attrs = hl_group_attr_strs("White")
+  vim.cmd(string.format("highlight GitabraStatusFile %s gui=bold cterm=bold", table.concat(attrs, " ")))
+
+  module_initialized = true
+end
+
+
 local function status_info()
   local root_dir_j = u.git_root_dir_j()
   local branch_j = git_get_branch()
@@ -126,9 +165,11 @@ local function status_info()
   local commit_msg = branch_msg_j.output[1]
   commit_msg = commit_msg and commit_msg:sub(2, -2) or "No commits yet"
 
+-- #7DAEA3
   return {
     git_root = root_dir_j.output[1],
-    header = string.format("[%s] %s", branch_j.output[1], commit_msg),
+    branch = branch_j.output[1],
+    last_commit_msg = commit_msg,
     files = files,
     untracked = untracked,
     staged = staged,
@@ -463,7 +504,10 @@ end
 
 local function make_file_node(filename)
   return {
-    text = filename,
+    text = u.markup({{
+          group = "GitabraStatusFile",
+          text = filename
+    }}),
     type = type_file,
   }
 end
@@ -543,6 +587,8 @@ local function reconcile_outline(old_outline, new_outline)
 end
 
 local function gitabra_status()
+  module_initialize()
+
   local st_info = status_info()
   local patches = patch_infos()
 
@@ -570,13 +616,23 @@ local function gitabra_status()
   -- inserts are done.
 
   -- print( vim.inspect(info))
-  if st_info.header then
-    outline:add_node(nil, {text = string.format("Head:    %s", st_info.header)})
+  if st_info.branch and st_info.last_commit_msg then
+    local header = u.markup({
+        "Head:   ",
+        {group = "GitabraBranch",
+        text = st_info.branch},
+        st_info.last_commit_msg,
+    })
+
+    outline:add_node(nil, {text = {header}})
   end
 
   if #st_info.untracked ~= 0 then
     local section = outline:add_node(nil, {
-        text = "Untracked",
+        text = u.markup({{
+            group = "GitabraStatusSection",
+            text = "Untracked"
+        }}),
         type = type_section,
         id = "untracked",
         padlines_before = 1,
@@ -589,7 +645,10 @@ local function gitabra_status()
   if #st_info.unstaged ~= 0 then
     -- print( "adding unstaged files:", #st_info.unstaged )
     local section = outline:add_node(nil, {
-        text = "Unstaged",
+        text = u.markup({{
+            group = "GitabraStatusSection",
+            text = "Unstaged"
+        }}),
         type = type_section,
         id = "unstaged",
         padlines_before = 1,
@@ -602,7 +661,10 @@ local function gitabra_status()
 
   if #st_info.staged ~= 0 then
     local section = outline:add_node(nil, {
-        text = "Staged",
+        text = u.markup({{
+          group = "GitabraStatusSection",
+          text = "Staged"
+        }}),
         type = type_section,
         id = "staged",
         padlines_before = 1,
