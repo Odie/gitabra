@@ -165,7 +165,6 @@ local function status_info()
   local commit_msg = branch_msg_j.output[1]
   commit_msg = commit_msg and commit_msg:sub(2, -2) or "No commits yet"
 
--- #7DAEA3
   return {
     git_root = root_dir_j.output[1],
     branch = branch_j.output[1],
@@ -300,12 +299,6 @@ local function get_sole_status_screen()
   return current_status_screen
 end
 
-local function node_zipper_at_current_line()
-  local lineno = vim.fn.line(".") - 1
-  local outline = get_sole_status_screen().outline
-  return outline:node_zipper_at_lineno(lineno)
-end
-
 local function toggle_fold_at_current_line()
   local lineno = vim.fn.line(".") - 1
   local outline = get_sole_status_screen().outline
@@ -318,7 +311,6 @@ local function toggle_fold_at_current_line()
     return
   end
 
-  -- print("picked node:", vim.inspect(z:node()))
   local node
 
   -- Which node do we actually want to collapse?
@@ -327,20 +319,16 @@ local function toggle_fold_at_current_line()
   -- collapsed. Instead, we're going to collapse it's
   -- parent/header.
   if not z:has_children() then
-    -- print("is leaf")
     node = z:parent_node()
     if node == outline.root then
       return
     end
   else
-    -- print("has children")
     node = z:node()
   end
   node.collapsed = not node.collapsed
 
-  -- print("node altered:", vim.inspect(node))
-
-  -- Rebuild the buffer from scratch
+  -- Refresh the buffer
   outline:refresh()
 
   -- Move the cursor to whatever we've just collapsed
@@ -375,7 +363,6 @@ local function hunk_lines_count_type(lines, line_type, line_limit)
 
   for i=1, line_limit do
     local line = lines[i]
-    local inc = false
     local t = hunk_line_type(line)
     if (line_type == "+" or line_type == "common") and (t == "+" or t == "common") then
       count = count + 1
@@ -596,7 +583,8 @@ local function gitabra_status()
   local patches = patch_infos()
 
   local sc_o = get_sole_status_screen()
-  local sc_n = {bufnr = sc_o.bufnr,
+  local sc_n = {
+    bufnr = sc_o.bufnr,
     winnr = sc_o.winnr
   }
 
@@ -618,7 +606,6 @@ local function gitabra_status()
   -- we should disable the folding and re-enable it after all the
   -- inserts are done.
 
-  -- print( vim.inspect(info))
   if st_info.branch and st_info.last_commit_msg then
     local header = u.markup({
         "Head:   ",
@@ -646,7 +633,6 @@ local function gitabra_status()
   end
 
   if #st_info.unstaged ~= 0 then
-    -- print( "adding unstaged files:", #st_info.unstaged )
     local section = outline:add_node(nil, {
         text = u.markup({{
             group = "GitabraStatusSection",
@@ -804,6 +790,8 @@ local function patch_from_selected_hunk(hc, for_discard)
     hunk_header = patch_parser.make_hunk_header(hh)
     hunk_content = result.content
 
+    -- Exit visual mode for the user
+    -- TODO: Move this somewhere else. This shouldn't be done in the middle of generating a patch
     local mode = vim.fn.mode()
     if mode == "v" or mode == "V" then
       api.nvim_input("<ESC>")
