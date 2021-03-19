@@ -220,6 +220,7 @@ local function setup_keybinds(bufnr)
   set_keymap('v', 'x', '<cmd>lua require("gitabra.git_status").discard_hunk()<cr>', opts)
   set_keymap('n', 'q', '<cmd>close<cr>', opts)
   set_keymap('n', 'cc', '<cmd>lua require("gitabra.git_commit").gitabra_commit()<cr>', opts)
+  set_keymap('n', 'ca', '<cmd>lua require("gitabra.git_commit").gitabra_commit("amend")<cr>', opts)
 end
 
 local status_buf_name = "gitabra:////gitabra_status"

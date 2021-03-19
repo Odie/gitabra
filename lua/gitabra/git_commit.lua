@@ -34,10 +34,16 @@ local function finish_commit(event)
     end
 end
 
-local function gitabra_commit()
+local function gitabra_commit(mode)
     -- Start `git commit` and hold the process open
     local temppath = vim.fn.tempname()
-    local j = u.system_async("git commit", {
+
+    local cmd = {"git", "commit"}
+    if mode == "amend" then
+        table.insert(cmd, "--amend")
+    end
+
+    local j = u.system_async(cmd, {
             env = {
                 -- Give `git commit` a shell command to run.
                 -- We will signal the shell command to terminate after the user
