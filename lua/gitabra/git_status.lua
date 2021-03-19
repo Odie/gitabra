@@ -329,6 +329,9 @@ local function toggle_fold_at_current_line()
   if not z:has_children() then
     -- print("is leaf")
     node = z:parent_node()
+    if node == outline.root then
+      return
+    end
   else
     -- print("has children")
     node = z:node()
