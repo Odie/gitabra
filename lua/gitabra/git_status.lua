@@ -749,6 +749,12 @@ local function partial_hunk(hunk_content, region, for_discard)
   }
 end
 
+local function in_visual_mode()
+  if vim.fn.mode() == "V" then
+    return true
+  end
+end
+
 -- Using the given hunk_context and the currently selected lines,
 -- prepare a patch that can be used with git-apply.
 --
@@ -779,7 +785,7 @@ local function patch_from_selected_hunk(hc, for_discard)
 
   -- If the user has selected just part of the hunk, we need to
   -- make some adjustments to the header and the content
-  if vim.fn.mode() == "V" then
+  if in_visual_mode() then
     local region = u.selected_region()
     local offset = hc[type_hunk_content].lineno
     local result = partial_hunk(hc[type_hunk_content].text, {region[1]-offset, region[2]-offset}, for_discard)
@@ -870,7 +876,14 @@ local function stage()
 end
 
 local function discard_hunk()
-  local choice = vim.fn.confirm("Really discard this hunk?", "y\nN", 2)
+  local choice
+  if in_visual_mode() then
+    local region = u.selected_region()
+    local count = region[2] - region[1] + 1
+    choice = vim.fn.confirm(string.format("Really discard selected lines (%i)?", count), "y\nN", 2)
+  else
+    choice = vim.fn.confirm("Really discard this hunk?", "y\nN", 2)
+  end
   if choice ~= 1 then
     return
   end
