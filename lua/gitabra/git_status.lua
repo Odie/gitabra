@@ -202,7 +202,7 @@ local function patch_infos()
 end
 
 local function setup_window()
-  vim.cmd("split")
+  vim.cmd(":topleft vnew")
   local win = api.nvim_get_current_win()
   vim.wo[win].number = false
   vim.wo[win].relativenumber = false
