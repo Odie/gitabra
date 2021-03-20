@@ -408,7 +408,7 @@ local function hunk_context(z)
   -- Since a hunk header should only have a single hunk content node attached,
   -- it's straightforward to fill that in now.
   -- The rest of the code will not have to deal with these cases.
-  if hc[type_hunk_content] == nil and hc[type_hunk_content] then
+  if hc[type_hunk_content] == nil and hc[type_hunk_header] then
     hc[type_hunk_content] = hc[type_hunk_header].children[1]
   end
 
@@ -418,14 +418,14 @@ end
 local function hc_target_full_filepath(hc)
   local file = hc[type_file]
   if file then
-    return string.format("%s/%s", u.git_root_dir(), file.text[1])
+    return string.format("%s/%s", u.git_root_dir(), file.filename)
   end
 end
 
 local function hc_target_rel_filepath(hc)
   local file = hc[type_file]
   if file then
-    return file.text[1]
+    return file.filename
   end
 end
 
@@ -493,12 +493,19 @@ local function populate_hunks(outline, file_node, patch_info, filepath)
   end
 end
 
-local function make_file_node(filename)
+local function make_file_node(filename, mod_type)
+  local heading
+  if mod_type then
+    heading = string.format("%s   %s", mod_type, filename)
+  else
+    heading = filename
+  end
   return {
     text = u.markup({{
           group = "GitabraStatusFile",
-          text = filename
+          text = heading
     }}),
+    filename = filename,
     type = type_file,
   }
 end
@@ -644,7 +651,7 @@ local function gitabra_status()
         padlines_before = 1,
     })
     for _, file in pairs(st_info.unstaged) do
-      local file_node = outline:add_node(section, make_file_node(file.name))
+      local file_node = outline:add_node(section, make_file_node(file.name, file.working))
       populate_hunks(outline, file_node, patches.unstaged, file.name)
     end
   end
@@ -660,7 +667,7 @@ local function gitabra_status()
         padlines_before = 1,
     })
     for _, file in pairs(st_info.staged) do
-      local file_node = outline:add_node(section, make_file_node(file.name))
+      local file_node = outline:add_node(section, make_file_node(file.name, file.index))
       populate_hunks(outline, file_node, patches.staged, file.name)
     end
   end
@@ -777,7 +784,7 @@ local function patch_from_selected_hunk(hc, for_discard)
   --
   -- To get the hunk header and hunk content, we're going to grab both from the outline directly.
 
-  local file_diff = patch_parser.find_file(patch.patch_info, hc[type_file].text[1])
+  local file_diff = patch_parser.find_file(patch.patch_info, hc_target_rel_filepath(hc))
   local diff_header = patch_parser.file_diff_get_header_contents(file_diff, patch.patch_text)
   diff_header = u.remove_trailing_newlines(diff_header)
 
