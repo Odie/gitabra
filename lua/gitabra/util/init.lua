@@ -356,6 +356,37 @@ local function nvim_synIDattr(synID, what, mode)
   end
 end
 
+local function string_split_by_pattern(str, pattern)
+  local tokens = {}
+  local last_e = 0
+  local s = 0
+  local e = 0
+  while true do
+    s, e = string.find(str, pattern, e+1)
+
+    -- No more matches...
+    -- Put all contents from the end of the last match up to end of string into tokens
+    if s == nil then
+      table.insert(tokens, string.sub(str, last_e+1, string.len(str)))
+      break
+
+    -- If the next match came immediately after the last_e,
+    -- we've encountered a case where two deliminator patterns were placed side-by-side.
+    -- Place an empty string in the tokens array to indicate an empty field was found
+    elseif last_e+1 == s then
+      table.insert(tokens, "")
+
+    -- Otherwise, extract all string contents starting from the last_e up to where this
+    -- match was found
+    else
+      table.insert(tokens, string.sub(str, last_e+1, s-1))
+    end
+    last_e = e
+  end
+
+  return tokens
+end
+
 return ut.table_copy_into({
     lines = lines,
     lines_array = lines_array,
@@ -382,6 +413,7 @@ return ut.table_copy_into({
     is_markup = is_markup,
     markup_flatten = markup_flatten,
     nvim_synIDattr = nvim_synIDattr,
+    string_split_by_pattern = string_split_by_pattern,
   },
   ut,
   require('gitabra.util.functional'))

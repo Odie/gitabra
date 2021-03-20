@@ -20,7 +20,11 @@ local function diff_indices(text_in)
 end
 
 local function hunk_iter(text, index)
-  local s, e = text:find("\n@@ [+-]?%d+,%d+ [+-]?%d+,%d+ @@.-\n", index+1)
+  -- A hunk header looks something like "@@ -1,5 +1,5 @@"
+  -- But sometimes, it can look like "@@ -1 +1 @@"
+  local s, e = text:find("\n@@ .- @@.-\n", index+1)
+
+  -- Neither pattern matched?
   if s == nil then
     return e, s, e
   else
@@ -28,17 +32,51 @@ local function hunk_iter(text, index)
   end
 end
 
-local function hunk_indices(text_in)
-  return hunk_iter , text_in, 0
+local function hunk_indices(text)
+  return hunk_iter, text, 0
+end
+
+local function strip_leading_signs(str)
+  local s, e = string.find(str, "^[+-]*")
+  if s then
+    return string.sub(str, e+1)
+  else
+    return str
+  end
 end
 
 local function parse_hunk_header(text)
-  local result = {text:match("^@@ [+-]?(%d+),(%d+) [+-]?(%d+),(%d+) @@")}
-  return u.map(result, tonumber)
+  -- Split header by whitespace
+  local tokens = u.string_split_by_pattern(text, "%s+")
+
+  -- Tokens should look something like {"@@","-1,5","+1,5","@@"}
+  assert(#tokens >= 4, vim.inspect(tokens))
+  assert(tokens[1] == "@@")
+  assert(tokens[4] == "@@")
+
+  local range1 = u.string_split_by_pattern(tokens[2], ",")
+  local range2 = u.string_split_by_pattern(tokens[3], ",")
+
+  range1[1] = strip_leading_signs(range1[1])
+  range2[1] = strip_leading_signs(range2[1])
+  u.map(range1, tonumber)
+  u.map(range2, tonumber)
+
+  return {{start=range1[1], count=range1[2]}, {start=range2[1], count=range2[2]}}
 end
 
-local function make_hunk_header(arr)
-  return string.format("@@ -%i,%i +%i,%i @@", arr[1], arr[2], arr[3], arr[4])
+local function build_hunk_header_component(entry)
+  if entry.count then
+    return string.format("%i,%i", entry.start, entry.count)
+  else
+    return string.format("%i", entry.start)
+  end
+end
+
+local function make_hunk_header(hh)
+  local c1 = build_hunk_header_component(hh[1])
+  local c2 = build_hunk_header_component(hh[2])
+  return string.format("@@ -%s +%s @@", c1, c2)
 end
 
 local function file_diff_get_header_contents(file_diff, patch_text)

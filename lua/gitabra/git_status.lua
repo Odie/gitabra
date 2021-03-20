@@ -456,7 +456,7 @@ local function jump_to_location()
 
   -- Is the user targetting a specific line of a hunk?
   if hc[type_hunk_content] then
-    local hunk_start = patch_parser.parse_hunk_header(hc[type_hunk_header].text[1])[3]
+    local hunk_start = patch_parser.parse_hunk_header(hc[type_hunk_header].text[1])[2].start
     local rellineno = lineno - hc[type_hunk_content].lineno + 1
     local line_type = hunk_line_type(hc[type_hunk_content].text[rellineno])
     if line_type == "-" then
@@ -465,7 +465,7 @@ local function jump_to_location()
     local count = hunk_lines_count_type(hc[type_hunk_content].text, line_type, rellineno)
     vim.cmd(string.format("e +%i %s", hunk_start+count-1, hc_target_full_filepath(hc)))
   elseif hc[type_hunk_header] then
-    local hunk_start = patch_parser.parse_hunk_header(hc[type_hunk_header].text[1])[3]
+    local hunk_start = patch_parser.parse_hunk_header(hc[type_hunk_header].text[1])[2].start
     vim.cmd(string.format("e +%i %s", hunk_start, hc_target_full_filepath(hc)))
   elseif hc[type_file] then
     vim.cmd(string.format("e %s", hc_target_full_filepath(hc)))
@@ -791,8 +791,8 @@ local function patch_from_selected_hunk(hc, for_discard)
     local offset = hc[type_hunk_content].lineno
     local result = partial_hunk(hc[type_hunk_content].text, {region[1]-offset, region[2]-offset}, for_discard)
     local hh = patch_parser.parse_hunk_header(hc[type_hunk_header].text[1])
-    hh[2] = result.unmarked + result.removed
-    hh[4] = result.unmarked + result.added
+    hh[1].count = result.unmarked + result.removed
+    hh[2].count = result.unmarked + result.added
 
     hunk_header = patch_parser.make_hunk_header(hh)
     hunk_content = result.content
