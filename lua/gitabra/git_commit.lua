@@ -38,10 +38,12 @@ local function finish_commit()
 end
 
 local function gitabra_commit(mode)
-    local has_changes = git_has_staged_changes()
-    if has_changes == 0 then
-        print("No staged changes to commit")
-        return
+    if mode ~= "amend" then
+        local has_changes = git_has_staged_changes()
+        if has_changes == 0 then
+            print("No staged changes to commit")
+            return
+        end
     end
 
     -- Start `git commit` and hold the process open
