@@ -4,8 +4,11 @@ local api = vim.api
 
 local singleton
 
-local function get_singleton()
-  return singleton or {}
+local function git_has_staged_changes()
+    local j = u.system_async({"git", "diff", "--cached", "--exit-code"}, {split_lines=true})
+    job.wait(j, 1000)
+    assert(j.done == true)
+    return j.exit_code
 end
 
 -- This script used together with `git commit` to make sure
@@ -21,7 +24,7 @@ done
 exit 0"]], params)
 end
 
-local function finish_commit(event)
+local function finish_commit()
     local commit_state = singleton
     if commit_state then
         singleton = nil
@@ -35,6 +38,12 @@ local function finish_commit(event)
 end
 
 local function gitabra_commit(mode)
+    local has_changes = git_has_staged_changes()
+    if has_changes == 0 then
+        print("No staged changes to commit")
+        return
+    end
+
     -- Start `git commit` and hold the process open
     local temppath = vim.fn.tempname()
 
@@ -89,7 +98,6 @@ local function gitabra_commit(mode)
 end
 
 return {
-    get_singleton = get_singleton,
     make_editor_script = make_editor_script,
     gitabra_commit = gitabra_commit,
     finish_commit = finish_commit,

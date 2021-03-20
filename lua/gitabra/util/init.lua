@@ -68,10 +68,11 @@ local function system_async(cmd, opt)
           end
         end
       end,
-      on_exit = function(_, _, _)
+      on_exit = function(_, code, _)
         if opt.merge_output and #result.output > 1 then
           result.output = { table.concat(result.output) }
         end
+        result.exit_code = code
         result.done = true
         result.stop_time = nanotime()
         result.elapsed_time = result.stop_time - result.start_time
