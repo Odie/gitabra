@@ -653,6 +653,7 @@ local function gitabra_status()
     for _, file in pairs(st_info.unstaged) do
       local file_node = outline:add_node(section, make_file_node(file.name, file.working))
       populate_hunks(outline, file_node, patches.unstaged, file.name)
+      file_node.collapsed = true
     end
   end
 
@@ -669,6 +670,7 @@ local function gitabra_status()
     for _, file in pairs(st_info.staged) do
       local file_node = outline:add_node(section, make_file_node(file.name, file.index))
       populate_hunks(outline, file_node, patches.staged, file.name)
+      file_node.collapsed = true
     end
   end
 
