@@ -61,7 +61,7 @@ local function system_async(cmd, opt)
         if data then
           if opt.split_lines then
             for line in lines(data) do
-              table.insert(result.output, line)
+              table.insert(result.err_output, line)
             end
           else
             table.insert(result.err_output, data)
