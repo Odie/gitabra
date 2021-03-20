@@ -32,7 +32,7 @@ local function git_diff_staged()
 end
 
 local function git_apply_patch(direction, patch_text)
-  local cmd = {"git", "apply", "--cached"}
+  local cmd = {"git", "apply", "--cached", "--whitespace=nowarn"}
   if direction == "unstage" then
     table.insert(cmd, "--reverse")
   end
@@ -813,6 +813,10 @@ local function patch_from_selected_hunk(hc, for_discard)
   return table.concat(lines, "\n")
 end
 
+local function print_job_error(j)
+  print(table.concat(j.err_output))
+end
+
 local function stage_hunk(hc)
   local direction
   if hc[type_section].id == "unstaged" then
@@ -828,7 +832,7 @@ local function stage_hunk(hc)
   job.wait(j, 100)
 
   if not u.table_is_empty(j.err_output) then
-    print(vim.inspect(j.err_output))
+    print_job_error(j)
     print(string.format("%s failed", direction))
   else
     -- The state of the hunks have changed
@@ -842,7 +846,7 @@ local function stage_file(hc)
   local j = git_add(hc_target_rel_filepath(hc))
   job.wait(j, 500)
   if not u.table_is_empty(j.err_output) then
-    print(j.err_output[1])
+    print_job_error(j)
   else
     gitabra_status()
   end
@@ -852,7 +856,7 @@ local function unstage_file(hc)
   local j = git_reset_file(hc_target_rel_filepath(hc))
   job.wait(j, 500)
   if not u.table_is_empty(j.err_output) then
-    print(j.err_output[1])
+    print_job_error(j)
   else
     gitabra_status()
   end
@@ -877,6 +881,13 @@ local function stage()
 end
 
 local function discard_hunk()
+  local z = outline_zipper_at_current_line()
+  local node = z:node()
+  if not (node.type == type_hunk_content or node.type == type_hunk_header) then
+    print("Oops... Don't know how to discard this yet...")
+    return
+  end
+
   local choice
   if in_visual_mode() then
     local region = u.selected_region()
@@ -886,12 +897,6 @@ local function discard_hunk()
     choice = vim.fn.confirm("Really discard this hunk?", "y\nN", 2)
   end
   if choice ~= 1 then
-    return
-  end
-
-  local z = outline_zipper_at_current_line()
-  local node = z:node()
-  if not (node.type == type_hunk_content or node.type == type_hunk_header) then
     return
   end
 
