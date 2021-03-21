@@ -1,4 +1,3 @@
-local lpeg = require("lpeg")
 local u = require("gitabra.util")
 local bit = require("bit")
 
