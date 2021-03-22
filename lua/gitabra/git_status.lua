@@ -213,10 +213,15 @@ local function setup_keybinds(bufnr)
   local function set_keymap(...) vim.api.nvim_buf_set_keymap(bufnr, ...) end
   local opts = { noremap=true, silent=true }
   set_keymap('n', '<tab>', '<cmd>lua require("gitabra.git_status").toggle_fold_at_current_line()<cr>', opts)
+
   set_keymap('n', 's', '<cmd>lua require("gitabra.git_status").stage()<cr>', opts)
   set_keymap('v', 's', '<cmd>lua require("gitabra.git_status").stage()<cr>', opts)
   set_keymap('n', 'S', '<cmd>lua require("gitabra.git_status").stage_all()<cr>', opts)
+
+  set_keymap('n', 'u', '<cmd>lua require("gitabra.git_status").unstage()<cr>', opts)
+  set_keymap('v', 'u', '<cmd>lua require("gitabra.git_status").unstage()<cr>', opts)
   set_keymap('n', 'U', '<cmd>lua require("gitabra.git_status").unstage_all()<cr>', opts)
+
   set_keymap('n', '<enter>', '<cmd>lua require("gitabra.git_status").jump_to_location()<cr>', opts)
   set_keymap('n', 'x', '<cmd>lua require("gitabra.git_status").discard_hunk()<cr>', opts)
   set_keymap('v', 'x', '<cmd>lua require("gitabra.git_status").discard_hunk()<cr>', opts)
@@ -879,15 +884,30 @@ local function stage()
   local node = z:node()
   local hc = hunk_context(z)
 
-  -- If we're not pointed at a hunk, we can't stage it, so do nothing
-  if node.type == type_hunk_content or node.type == type_hunk_header then
+  -- Are we pointing at a hunk in the unstaged section?
+  if (node.type == type_hunk_content or node.type == type_hunk_header) and hc[type_section].id == "unstaged" then
     stage_hunk(hc)
+
+  -- Are we pointing at a file in the untracked or unstaged section?
   elseif node.type == type_file and (hc[type_section].id == "untracked" or hc[type_section].id == "unstaged") then
     stage_file(hc)
-  elseif node.type == type_file and hc[type_section].id == "staged" then
+  end
+end
+
+local function unstage()
+  local z = outline_zipper_at_current_line()
+  local node = z:node()
+  local hc = hunk_context(z)
+
+  -- We're only going to deal with items in the staged section
+  if hc[type_section].id ~= "staged" then
+    return
+  end
+
+  if node.type == type_hunk_content or node.type == type_hunk_header then
+    stage_hunk(hc)
+  elseif node.type == type_file then
     unstage_file(hc)
-  else
-    print("Oops... Don't know how to stage this yet...")
   end
 end
 
@@ -957,6 +977,7 @@ return {
   get_sole_status_screen = get_sole_status_screen,
   toggle_fold_at_current_line = toggle_fold_at_current_line,
   stage = stage,
+  unstage = unstage,
   stage_all = stage_all,
   unstage_all = unstage_all,
   jump_to_location = jump_to_location,
