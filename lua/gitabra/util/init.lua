@@ -416,4 +416,5 @@ return ut.table_copy_into({
     string_split_by_pattern = string_split_by_pattern,
   },
   ut,
-  require('gitabra.util.functional'))
+  require('gitabra.util.functional'),
+  require('gitabra.util.color'))
