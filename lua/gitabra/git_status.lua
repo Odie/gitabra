@@ -215,6 +215,8 @@ local function setup_keybinds(bufnr)
   set_keymap('n', '<tab>', '<cmd>lua require("gitabra.git_status").toggle_fold_at_current_line()<cr>', opts)
   set_keymap('n', 's', '<cmd>lua require("gitabra.git_status").stage()<cr>', opts)
   set_keymap('v', 's', '<cmd>lua require("gitabra.git_status").stage()<cr>', opts)
+  set_keymap('n', 'S', '<cmd>lua require("gitabra.git_status").stage_all()<cr>', opts)
+  set_keymap('n', 'U', '<cmd>lua require("gitabra.git_status").unstage_all()<cr>', opts)
   set_keymap('n', '<enter>', '<cmd>lua require("gitabra.git_status").jump_to_location()<cr>', opts)
   set_keymap('n', 'x', '<cmd>lua require("gitabra.git_status").discard_hunk()<cr>', opts)
   set_keymap('v', 'x', '<cmd>lua require("gitabra.git_status").discard_hunk()<cr>', opts)
@@ -889,6 +891,31 @@ local function stage()
   end
 end
 
+local function stage_all()
+  local j =  u.system_async('git add -A', {split_lines=true})
+  job.wait(j, 1000)
+  if not u.table_is_empty(j.err_output) then
+    print_job_error(j)
+  else
+    gitabra_status()
+  end
+end
+
+local function unstage_all()
+  local choice = vim.fn.confirm("Unstage all changes?", "y\nN", 2)
+  if choice ~= 1 then
+    return
+  end
+
+  local j =  u.system_async('git reset', {split_lines=true})
+  job.wait(j, 1000)
+  if not u.table_is_empty(j.err_output) then
+    print_job_error(j)
+  else
+    gitabra_status()
+  end
+end
+
 local function discard_hunk()
   local z = outline_zipper_at_current_line()
   local node = z:node()
@@ -930,6 +957,8 @@ return {
   get_sole_status_screen = get_sole_status_screen,
   toggle_fold_at_current_line = toggle_fold_at_current_line,
   stage = stage,
+  stage_all = stage_all,
+  unstage_all = unstage_all,
   jump_to_location = jump_to_location,
   discard_hunk = discard_hunk,
 }
