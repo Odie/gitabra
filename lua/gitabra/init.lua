@@ -1,8 +1,10 @@
 local M = {}
 
-local status, git_status = pcall(require, 'gitabra.git_status')
+local status, gitabra_status = pcall(require, 'gitabra.git_status')
 if status then
-  M.gitabra_status = git_status.gitabra_status
+  M.gitabra_status = gitabra_status.gitabra_status
+else
+  print(gitabra_status)
 end
 
 if vim.g.gitabra_dev == 1 then
