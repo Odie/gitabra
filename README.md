@@ -11,8 +11,10 @@ While in the status buffer:
 
 - `<tab>` to expand/collapse the node under the cursor
 - `<enter>` to visit the thing under the cursor
-- `s` to stage or unstage hunk or file under the cursor (partial hunk
-  supported)
+- `s` to stage hunk or file under the cursor (partial hunk supported)
+- `S` stage all
+- `u` to unstage hunk or file under the cursor (partial hunk supported)
+- `U` unstage all
 - `x` to discard the hunk under the cursor (partial hunk supported)
 - `q` to quit the buffer and close the window
 - `cc` to start editing the commit message
