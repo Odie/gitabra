@@ -387,6 +387,42 @@ local function string_split_by_pattern(str, pattern)
   return tokens
 end
 
+local function hl_group_attrs(group_name, target_attrs)
+  local hl_group_id = api.nvim_get_hl_id_by_name(group_name)
+  if not target_attrs then
+    target_attrs = {
+      {"fg", "gui"},
+      {"bg", "gui"},
+      {"fg", "cterm"},
+      {"bg", "cterm"},
+    }
+  end
+
+  -- Fetch highlight group attributes
+  -- Only keep entries that returned non-emtpy values
+  local attrs = {}
+  for _, item in ipairs(target_attrs) do
+    local val = nvim_synIDattr(hl_group_id, unpack(item))
+    if not str_is_empty(val) then
+      attrs[string.format("%s%s", item[2], item[1])] = val
+    end
+  end
+  return attrs
+end
+
+local function hl_group_attrs_to_str(attrs)
+  local result = {}
+  for k, v in pairs(attrs) do
+    table.insert(result, string.format("%s=%s", k, v))
+  end
+  return table.concat(result, " ")
+end
+
+local function nvim_line_zero_idx(place)
+  return vim.fn.line(place)-1
+end
+
+
 return ut.table_copy_into({
     lines = lines,
     lines_array = lines_array,
@@ -414,6 +450,9 @@ return ut.table_copy_into({
     markup_flatten = markup_flatten,
     nvim_synIDattr = nvim_synIDattr,
     string_split_by_pattern = string_split_by_pattern,
+    hl_group_attrs = hl_group_attrs,
+    hl_group_attrs_to_str = hl_group_attrs_to_str,
+    nvim_line_zero_idx = nvim_line_zero_idx,
   },
   ut,
   require('gitabra.util.functional'),

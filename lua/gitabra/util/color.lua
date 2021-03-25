@@ -1,4 +1,7 @@
 -- Ported from https://css-tricks.com/converting-color-spaces-in-javascript/
+
+local bit = require("bit")
+
 local function RGB_to_Hex(r, g, b)
   return string.format("#%02x%02x%02x", r, g, b)
 end
@@ -9,6 +12,18 @@ local function Hex_to_RGB(hex)
   local b = tonumber(string.sub(hex, 6, 7), 16)
 
   return r, g, b
+end
+
+local function Bin_to_RGB(color)
+  local b = bit.band(color, 255)
+  local g = bit.band(bit.rshift(color, 8), 255)
+  local r = bit.band(bit.rshift(color, 16), 255)
+
+  return r, g, b
+end
+
+local function RGB_to_Bin(r, g, b)
+  return bit.bor(bit.lshift(r, 16), bit.lshift(g, 8), b)
 end
 
 local function math_sign(v)
@@ -105,9 +120,21 @@ local function HSL_to_RGB(h, s, l)
   return r, g, b
 end
 
+local function Hex_to_HSL(hex)
+  return RGB_to_HSL(Hex_to_RGB(hex))
+end
+
+local function HSL_to_Hex(h, s, l)
+  return RGB_to_Hex(HSL_to_RGB(h, s, l))
+end
+
 return {
   RGB_to_Hex = RGB_to_Hex,
   Hex_to_RGB = Hex_to_RGB,
   RGB_to_HSL = RGB_to_HSL,
   HSL_to_RGB = HSL_to_RGB,
+  Hex_to_HSL = Hex_to_HSL,
+  HSL_to_Hex = HSL_to_Hex,
+  Bin_to_RGB = Bin_to_RGB,
+  RGB_to_Bin = RGB_to_Bin,
 }

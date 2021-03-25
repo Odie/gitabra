@@ -21,7 +21,7 @@ local function table_get_last(t)
 end
 
 local function table_clone(t)
-  return {table.unpack(t)}
+  return {unpack(t)}
 end
 
 local function table_lazy_get(table, key, default)

@@ -76,27 +76,6 @@ local function status_letter_name(letter)
   end
 end
 
-local function hl_group_attr_strs(group_name)
-  local hl_group_id = api.nvim_get_hl_id_by_name(group_name)
-  local target_attrs = {
-    {"fg", "gui"},
-    {"bg", "gui"},
-    {"fg", "cterm"},
-    {"bg", "cterm"},
-  }
-
-  -- Fetch highlight group attributes
-  -- Only keep entries that returned non-emtpy values
-  local attrs = {}
-  for _, item in ipairs(target_attrs) do
-    local val = u.nvim_synIDattr(hl_group_id, unpack(item))
-    if not u.str_is_empty(val) then
-      table.insert(attrs, string.format("%s%s=%s", item[2], item[1], val))
-    end
-  end
-  return attrs
-end
-
 local module_initialized = false
 local function module_initialize()
   if module_initialized then
@@ -105,11 +84,23 @@ local function module_initialize()
 
   vim.cmd("highlight link GitabraBranch Blue")
 
-  local attrs = hl_group_attr_strs("Yellow")
-  vim.cmd(string.format("highlight GitabraStatusSection %s gui=bold cterm=bold", table.concat(attrs, " ")))
+  local attrs = u.hl_group_attrs("Yellow")
+  vim.cmd(string.format("highlight GitabraStatusSection %s gui=bold cterm=bold", u.hl_group_attrs_to_str(attrs)))
 
-  attrs = hl_group_attr_strs("White")
-  vim.cmd(string.format("highlight GitabraStatusFile %s gui=bold cterm=bold", table.concat(attrs, " ")))
+  attrs = u.hl_group_attrs("White")
+  vim.cmd(string.format("highlight GitabraStatusFile %s gui=bold cterm=bold", u.hl_group_attrs_to_str(attrs)))
+
+  -- Set the node content highlight
+  -- Disable the highlight if we can't retrieve the guibg color
+  attrs = u.hl_group_attrs("Normal")
+  if not attrs.guibg then
+    vim.cmd("highlight link GitabraNodeActiveHeader Normal")
+  else
+    -- Otherwise, make it slightly brighter than the normal background
+    local h, s, l = u.Hex_to_HSL(attrs.guibg)
+    vim.cmd(string.format("highlight GitabraNodeActiveHeader %s", u.hl_group_attrs_to_str({guibg = u.HSL_to_Hex(h, s+5.2, l+10.0)})))
+  end
+  vim.fn.sign_define("GitabraNodeActiveHeader", {linehl = "GitabraNodeActiveHeader"})
 
   module_initialized = true
 end
@@ -228,6 +219,8 @@ local function setup_keybinds(bufnr)
   set_keymap('n', 'q', '<cmd>close<cr>', opts)
   set_keymap('n', 'cc', '<cmd>lua require("gitabra.git_commit").gitabra_commit()<cr>', opts)
   set_keymap('n', 'ca', '<cmd>lua require("gitabra.git_commit").gitabra_commit("amend")<cr>', opts)
+  set_keymap('n', 'j', '<cmd>lua require("gitabra.git_status").next_line()<cr>', opts)
+  set_keymap('n', 'k', '<cmd>lua require("gitabra.git_status").prev_line()<cr>', opts)
 end
 
 local status_buf_name = "gitabra:////gitabra_status"
@@ -591,6 +584,8 @@ local function reconcile_outline(old_outline, new_outline)
   return old_outline
 end
 
+local update_hunk_hint_hl
+
 local function gitabra_status()
   module_initialize()
 
@@ -717,6 +712,8 @@ local function gitabra_status()
   current_status_screen.outline:refresh()
 
   vim.cmd(tostring(lineno))
+
+  update_hunk_hint_hl()
 end
 
 -- Given the contents of a hunk and the region that was selected (0 indexed),
@@ -969,6 +966,125 @@ local function discard_hunk()
   end
 end
 
+local hunk_hint = {
+  last_buf_changetick = nil,
+  node_ids = {},
+  lines = {},
+  signs = {},
+}
+
+local hunk_hint_sign_group = "Hunk Hint"
+
+local function unplace_hunk_hints()
+  if hunk_hint.signs[1] or hunk_hint.signs[2] then
+    vim.fn.sign_unplace(hunk_hint_sign_group)
+    hunk_hint.signs[1] = nil
+    hunk_hint.signs[2] = nil
+    hunk_hint.lines[1] = nil
+    hunk_hint.lines[2] = nil
+  end
+end
+
+local function update_hunk_hint_internal()
+  local sc = get_sole_status_screen()
+  -- If the buffer was not changed since the last time we updated the hunk hints,
+  -- then we can just check if the current line is within the known
+  if hunk_hint.last_buf_changetick == api.nvim_buf_get_changedtick(sc.bufnr) then
+    local lineno = u.nvim_line_zero_idx(".")
+    if hunk_hint.lines[1] and hunk_hint.lines[2] and
+      hunk_hint.lines[1] <= lineno and lineno < hunk_hint.lines[2] then
+      return
+    end
+  end
+  local z = outline_zipper_at_current_line()
+  if not z then
+    return "unplace"
+  end
+
+  local hc = hunk_context(z:clone())
+  if not hc[type_section] then
+    return "unplace"
+  end
+  if hc[type_section].id ~= "unstaged" and hc[type_section].id ~= "staged" then
+    return "unplace"
+  end
+
+  local n1 = hc[type_hunk_header]
+  if not n1 then
+    return "unplace"
+  end
+  if n1.collapsed then
+    return "unplace"
+  end
+
+  local n2
+  while z:node() ~= n1 and z:node() ~= z.root do
+    z:up()
+  end
+
+  if z:right() then
+    n2 = z:node()
+  elseif z:next_up_right() then
+    n2 = z:node()
+  end
+
+  if n1 and n2 then
+    if node_id(n1) ~= hunk_hint.node_ids[1] or node_id(n2) ~= hunk_hint.node_ids[2] then
+      unplace_hunk_hints()
+      local lineno1 = n1.lineno+1
+      local lineno2 = n2.lineno+1
+      if n2.type == type_section then
+        lineno2 = lineno2 - n2.padlines_before
+      end
+      local sc = get_sole_status_screen()
+      hunk_hint.node_ids[1] = n1.id
+      hunk_hint.node_ids[2] = n2.id
+      hunk_hint.signs[1] = vim.fn.sign_place(0, hunk_hint_sign_group, "GitabraNodeActiveHeader", sc.bufnr, {lnum = lineno1})
+      hunk_hint.signs[2] = vim.fn.sign_place(0, hunk_hint_sign_group, "GitabraNodeActiveHeader", sc.bufnr, {lnum = lineno2})
+      hunk_hint.lines[1] = n1.lineno
+      hunk_hint.lines[2] = n2.lineno
+      hunk_hint.last_buf_changetick = api.nvim_buf_get_changedtick(sc.bufnr)
+    end
+  else
+    if node_id(n1) ~= hunk_hint.node_ids[1] then
+      vim.fn.sign_unplace(hunk_hint_sign_group)
+      local lineno1 = n1.lineno+1
+      local sc = get_sole_status_screen()
+      hunk_hint.node_ids[1] = n1.id
+      hunk_hint.signs[1] = vim.fn.sign_place(0, hunk_hint_sign_group, "GitabraNodeActiveHeader", sc.bufnr, {lnum = lineno1})
+      hunk_hint.lines[1] = n1.lineno
+      hunk_hint.last_buf_changetick = api.nvim_buf_get_changedtick(sc.bufnr)
+    end
+  end
+end
+
+update_hunk_hint_hl = function()
+  local result = update_hunk_hint_internal()
+  if result == "unplace" then
+    unplace_hunk_hints()
+  end
+end
+
+local function next_line()
+  -- Move to the next line
+  local lineno = u.nvim_line_zero_idx(".")+1
+  if lineno >= api.nvim_buf_line_count(get_sole_status_screen().bufnr) then
+    return
+  end
+  vim.cmd(tostring(lineno+1))
+  update_hunk_hint_hl()
+end
+
+local function prev_line()
+  -- Move to the prev line
+  local lineno = u.nvim_line_zero_idx(".")-1
+  if lineno < 0 then
+    return
+  end
+  vim.cmd(tostring(lineno+1))
+  update_hunk_hint_hl()
+end
+
 return {
   status_info = status_info,
   patch_infos = patch_infos,
@@ -982,4 +1098,6 @@ return {
   unstage_all = unstage_all,
   jump_to_location = jump_to_location,
   discard_hunk = discard_hunk,
+  next_line = next_line,
+  prev_line = prev_line,
 }

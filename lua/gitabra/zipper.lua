@@ -26,6 +26,17 @@ function M.new(root, children_fn)
   return o
 end
 
+function M:clone()
+  local o = {
+    children_fn = self.children_fn,
+    path = u.table_clone(self.path),
+    path_idxs = u.table_clone(self.path_idxs),
+    root = root,
+  }
+  setmetatable(o, M)
+  return o
+end
+
 function M:set_new_root(node)
   path = {node}
   path_idxs = {0}
