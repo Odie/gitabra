@@ -13,6 +13,17 @@ local function table_copy_into(target, ...)
   return target
 end
 
+local function table_concat(target, ...)
+  local tables = {...}
+  for _, t in ipairs(tables) do
+    if type(t) == "table" then
+      for _,v in ipairs(t) do
+        table.insert(target, v)
+      end
+    end
+  end
+end
+
 -- Alias for better code clarity
 local table_push = table.insert
 local table_pop = table.remove
@@ -179,8 +190,47 @@ local function table_is_empty(t)
   end
 end
 
+local function table_approximate_type(t)
+  local approx_types = {}
+
+  if type(t) ~= "table" then
+    return type(t)
+  end
+
+  local all_numbers = true
+  for k, _ in pairs(t) do
+    if type(k) ~= "number" then
+      all_numbers = false
+    end
+  end
+  if all_numbers then
+    table.insert(approx_types, "array")
+  else
+    table.insert(approx_types, "hashtable")
+  end
+
+  local value_types = {}
+  for _, v in pairs(t) do
+    if type(v) ~= "table" then
+      value_types[type(v)] = true
+    elseif t.type then
+      value_types[t.type] = true
+    else
+      value_types["?"] = true
+    end
+  end
+
+  for k, _ in pairs(value_types) do
+    table.insert(approx_types, k)
+  end
+
+  return approx_types
+end
+
+
 return {
   table_copy_into = table_copy_into,
+  table_concat = table_concat,
   table_depth_first_visit = table_depth_first_visit,
   table_lazy_get = table_lazy_get,
   table_find_node = table_find_node,
@@ -193,4 +243,5 @@ return {
   table_array_items_by_id = table_array_items_by_id,
   table_array_find_by = table_array_find_by,
   table_is_empty = table_is_empty,
+  table_approximate_type = table_approximate_type,
 }

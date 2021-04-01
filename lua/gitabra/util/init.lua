@@ -229,6 +229,10 @@ local function remove_trailing_newlines(str)
   return result
 end
 
+local function trim(str)
+  return string.match(str, "^%s*(.-)%s*$")
+end
+
 local function selected_region()
   return {vim.fn.line("v")-1, vim.fn.line(".")-1}
 end
@@ -435,6 +439,7 @@ return ut.table_copy_into({
     partition = partition,
     partition_iterator = partition_iterator,
     remove_trailing_newlines = remove_trailing_newlines,
+    trim = trim,
     selected_region = selected_region,
     within_region = within_region,
     nanotime = nanotime,

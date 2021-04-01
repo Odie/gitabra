@@ -10,6 +10,7 @@ local type_section = "section"
 local type_file = "file"
 local type_hunk_header = "hunk header"
 local type_hunk_content = "hunk content"
+local type_recent_commit = "recent commit"
 
 local function git_get_branch()
   return u.system_async('git branch --show-current', {split_lines=true})
@@ -63,6 +64,81 @@ local function git_reset_file(rel_filepath)
   return u.system_async({"git", "reset", rel_filepath})
 end
 
+local function git_log_recents()
+  return u.system_async("git log --oneline -n 10 --decorate=short", {split_lines=true})
+end
+
+local function parse_ref(ref_str)
+  ref_str = u.trim(ref_str)
+  local result =  {}
+  local name = string.match(ref_str, "^HEAD %-> (.*)$")
+  if name then
+    result.name = name
+    result.current_branch = true
+    return result
+  end
+
+  local remote
+  remote, name = string.match(ref_str, "^(.-)/(.*)$")
+  if remote and name then
+    result.name = name
+    result.remote = remote
+    return result
+  end
+
+  result.name = ref_str
+  return result
+end
+
+local function parse_log_recent_entry(log_entry_str)
+  -- A recent commit line will look like either:
+  -- "abcdefg (ref1, ref2, ...) some commit message here"
+  -- or
+  -- "abcdefg some commit message here"
+  local rev, refs, msg
+
+  rev, refs, msg = string.match(log_entry_str, "^(%w+) %((.-)%) (.*)$")
+  if not rev then
+    rev, msg = string.match(log_entry_str, "^(%w+) (.*)$")
+  end
+  assert(rev and msg, "Unable to parse log lines")
+
+  local item = {
+      rev = rev,
+      msg = msg
+  }
+  if refs then
+      item.refs = u.map(u.string_split_by_pattern(refs, ","), parse_ref)
+  end
+  return item
+end
+
+local function format_ref(ref)
+  local result = u.markup({ text = ref.name })
+  if ref.current_branch then
+    result.group = "GitabraCurrentBranch"
+  elseif ref.remote then
+    result.group = "GitabraRemoteRef"
+    result.text = string.format("%s/%s", ref.remote, ref.name)
+  else
+    result.group = "GitabraBranch"
+  end
+  return result
+end
+
+local function format_log_recent_entry(log_entry)
+    local entry = u.markup({{
+        text = log_entry.rev,
+        group = "GitabraRev",
+    }})
+
+    if log_entry.refs then
+      u.table_concat(entry, u.map(log_entry.refs, format_ref))
+    end
+
+    table.insert(entry, log_entry.msg)
+    return entry
+end
 
 local function status_letter_name(letter)
   if "M" == letter then return "modified"
@@ -83,12 +159,22 @@ local function module_initialize()
   end
 
   vim.cmd("highlight link GitabraBranch Blue")
+  vim.cmd("highlight link GitabraRemoteRef Green")
+  vim.cmd("highlight link GitabraRev Blue")
 
-  local attrs = u.hl_group_attrs("Yellow")
-  vim.cmd(string.format("highlight GitabraStatusSection %s gui=bold cterm=bold", u.hl_group_attrs_to_str(attrs)))
+  local attrs = u.hl_group_attrs("Green")
+  attrs.gui = "underline"
+  vim.cmd(string.format("highlight GitabraCurrentBranch %s", u.hl_group_attrs_to_str(attrs)))
+
+  attrs = u.hl_group_attrs("Yellow")
+  attrs.gui = "bold"
+  attrs.cterm  = "bold"
+  vim.cmd(string.format("highlight GitabraStatusSection %s", u.hl_group_attrs_to_str(attrs)))
 
   attrs = u.hl_group_attrs("White")
-  vim.cmd(string.format("highlight GitabraStatusFile %s gui=bold cterm=bold", u.hl_group_attrs_to_str(attrs)))
+  attrs.gui = "bold"
+  attrs.cterm = "bold"
+  vim.cmd(string.format("highlight GitabraStatusFile %s", u.hl_group_attrs_to_str(attrs)))
 
   -- Set the node content highlight
   -- Disable the highlight if we can't retrieve the guibg color
@@ -111,7 +197,8 @@ local function status_info()
   local branch_j = git_get_branch()
   local branch_msg_j = git_branch_commit_msg()
   local status_j = git_status()
-  local jobs = {root_dir_j, branch_j, branch_msg_j, status_j}
+  local recents_j = git_log_recents()
+  local jobs = {root_dir_j, branch_j, branch_msg_j, status_j, recents_j}
 
   local wait_result = job.wait_all(jobs, 2000)
   if not wait_result then
@@ -164,6 +251,7 @@ local function status_info()
     untracked = untracked,
     staged = staged,
     unstaged = unstaged,
+    recents = recents_j.output,
   }
 end
 
@@ -510,6 +598,13 @@ local function make_file_node(filename, mod_type)
   }
 end
 
+local function make_recent_commit_node(log_entry)
+  return {
+    text = {format_log_recent_entry(log_entry)},
+    type = type_recent_commit,
+  }
+end
+
 local function node_id(node)
   if node.id then
     return node.id
@@ -627,7 +722,7 @@ local function gitabra_status()
     outline:add_node(nil, {text = {header}})
   end
 
-  if #st_info.untracked ~= 0 then
+  if not u.table_is_empty(st_info.untracked) then
     local section = outline:add_node(nil, {
         text = u.markup({{
             group = "GitabraStatusSection",
@@ -642,7 +737,7 @@ local function gitabra_status()
     end
   end
 
-  if #st_info.unstaged ~= 0 then
+  if not u.table_is_empty(st_info.unstaged) then
     local section = outline:add_node(nil, {
         text = u.markup({{
             group = "GitabraStatusSection",
@@ -659,7 +754,7 @@ local function gitabra_status()
     end
   end
 
-  if #st_info.staged ~= 0 then
+  if not u.table_is_empty(st_info.staged) then
     local section = outline:add_node(nil, {
         text = u.markup({{
           group = "GitabraStatusSection",
@@ -673,6 +768,22 @@ local function gitabra_status()
       local file_node = outline:add_node(section, make_file_node(file.name, file.index))
       populate_hunks(outline, file_node, patches.staged, file.name)
       file_node.collapsed = true
+    end
+  end
+
+  if not u.table_is_empty(st_info.recents) then
+    local section = outline:add_node(nil, {
+        text = u.markup({{
+          group = "GitabraStatusSection",
+          text = "Recent commits"
+        }}),
+        type = type_section,
+        id = "recents",
+        padlines_before = 1,
+    })
+
+    for _, log_entry_str in ipairs(st_info.recents) do
+      outline:add_node(section, make_recent_commit_node(parse_log_recent_entry(log_entry_str)))
     end
   end
 
