@@ -10,6 +10,7 @@ local type_section = "section"
 local type_file = "file"
 local type_hunk_header = "hunk header"
 local type_hunk_content = "hunk content"
+local type_stash_entry = "stash entry"
 local type_recent_commit = "recent commit"
 
 local function git_get_branch()
@@ -66,6 +67,10 @@ end
 
 local function git_log_recents()
   return u.system_async("git log --oneline -n 10 --decorate=short", {split_lines=true})
+end
+
+local function git_stash_list()
+  return u.system_async("git stash list", {split_lines=true})
 end
 
 local function parse_ref(ref_str)
@@ -140,6 +145,24 @@ local function format_log_recent_entry(log_entry)
     return entry
 end
 
+local function parse_stash_entry(str)
+  local rev, msg = string.match(str, "^(stash@{%d+}):(.*)$")
+  return {
+    stash_rev = rev,
+    msg = vim.trim(msg),
+  }
+end
+
+local function format_stash_entry(entry)
+  return u.markup({
+    {
+      group = "GitabraStashRev",
+      text = entry.stash_rev,
+    },
+    entry.msg,
+  })
+end
+
 local function status_letter_name(letter)
   if "M" == letter then return "modified"
   elseif "A" == letter then return "added"
@@ -161,6 +184,7 @@ local function module_initialize()
   vim.cmd("highlight link GitabraBranch Blue")
   vim.cmd("highlight link GitabraRemoteRef Green")
   vim.cmd("highlight link GitabraRev Blue")
+  vim.cmd("highlight link GitabraStashRev Blue")
 
   local attrs = u.hl_group_attrs("Green")
   attrs.gui = "underline"
@@ -198,7 +222,9 @@ local function status_info()
   local branch_msg_j = git_branch_commit_msg()
   local status_j = git_status()
   local recents_j = git_log_recents()
-  local jobs = {root_dir_j, branch_j, branch_msg_j, status_j, recents_j}
+  local stash_list_j = git_stash_list()
+
+  local jobs = {root_dir_j, branch_j, branch_msg_j, status_j, recents_j, stash_list_j}
 
   local wait_result = job.wait_all(jobs, 2000)
   if not wait_result then
@@ -252,6 +278,7 @@ local function status_info()
     staged = staged,
     unstaged = unstaged,
     recents = recents_j.output,
+    stash_list = stash_list_j.output,
   }
 end
 
@@ -768,6 +795,25 @@ local function gitabra_status()
       local file_node = outline:add_node(section, make_file_node(file.name, file.index))
       populate_hunks(outline, file_node, patches.staged, file.name)
       file_node.collapsed = true
+    end
+  end
+
+  if not u.table_is_empty(st_info.stash_list) then
+    local section = outline:add_node(nil, {
+        text = u.markup({{
+          group = "GitabraStatusSection",
+          text = "Stashes"
+        }}),
+        type = type_section,
+        id = "stashes",
+        padlines_before = 1,
+    })
+
+    for _, stash_entry_str in ipairs(st_info.stash_list) do
+      outline:add_node(section, {
+        text = format_stash_entry(parse_stash_entry(stash_entry_str)),
+        type = type_stash_entry,
+      })
     end
   end
 
