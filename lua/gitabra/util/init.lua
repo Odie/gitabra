@@ -230,7 +230,7 @@ local function remove_trailing_newlines(str)
 end
 
 local function trim(str)
-  return string.match(str, "^%s*(.-)%s*$")
+  return string.match(str, "^[\n\r%s]*(.-)[\n\r%s]*$")
 end
 
 local function selected_region()

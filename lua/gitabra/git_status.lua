@@ -149,7 +149,7 @@ local function parse_stash_entry(str)
   local rev, msg = string.match(str, "^(stash@{%d+}):(.*)$")
   return {
     stash_rev = rev,
-    msg = vim.trim(msg),
+    msg = u.trim(msg),
   }
 end
 
