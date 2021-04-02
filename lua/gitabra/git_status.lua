@@ -758,6 +758,7 @@ local function gitabra_status()
         type = type_section,
         id = "untracked",
         padlines_before = 1,
+        show_child_count = true,
     })
     for _, file in pairs(st_info.untracked) do
       outline:add_node(section, make_file_node(file.name))
@@ -773,6 +774,7 @@ local function gitabra_status()
         type = type_section,
         id = "unstaged",
         padlines_before = 1,
+        show_child_count = true,
     })
     for _, file in pairs(st_info.unstaged) do
       local file_node = outline:add_node(section, make_file_node(file.name, file.working))
@@ -790,6 +792,7 @@ local function gitabra_status()
         type = type_section,
         id = "staged",
         padlines_before = 1,
+        show_child_count = true,
     })
     for _, file in pairs(st_info.staged) do
       local file_node = outline:add_node(section, make_file_node(file.name, file.index))
@@ -808,6 +811,7 @@ local function gitabra_status()
         id = "stashes",
         padlines_before = 1,
         collapsed = true,
+        show_child_count = true,
     })
 
     for _, stash_entry_str in ipairs(st_info.stash_list) do

@@ -270,6 +270,10 @@ function M:refresh()
       node.sign_id = vim.fn.sign_place(0, disclosure_sign_group, sign_name, self.buffer, {lnum = lineno+1})
     end
 
+    if node.show_child_count and cs then
+      api.nvim_buf_set_virtual_text(self.buffer, -1, lineno, {{string.format("(%i)", #cs)}}, {})
+    end
+
     -- If this node has been collapsed, move on to the next sibling branch
     if node.collapsed then
       -- print("moving right")
