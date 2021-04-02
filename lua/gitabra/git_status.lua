@@ -807,6 +807,7 @@ local function gitabra_status()
         type = type_section,
         id = "stashes",
         padlines_before = 1,
+        collapsed = true,
     })
 
     for _, stash_entry_str in ipairs(st_info.stash_list) do
@@ -826,6 +827,7 @@ local function gitabra_status()
         type = type_section,
         id = "recents",
         padlines_before = 1,
+        collapsed = true,
     })
 
     for _, log_entry_str in ipairs(st_info.recents) do
