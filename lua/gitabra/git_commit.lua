@@ -1,14 +1,15 @@
 local u = require("gitabra.util")
 local job = require("gitabra.job")
 local api = vim.api
+local promise = require("gitabra.promise")
 
 local singleton
 
 local function git_has_staged_changes()
-    local j = u.system_async({"git", "diff", "--cached", "--exit-code"}, {split_lines=true})
-    job.wait(j, 1000)
-    assert(j.done == true)
-    return j.exit_code
+    local p = u.system_as_promise({"git", "diff", "--cached", "--exit-code"}, {split_lines=true})
+    p:wait(1000)
+    assert(p:is_realized())
+    return p.job.exit_code
 end
 
 -- This script used together with `git commit` to make sure
@@ -28,9 +29,9 @@ local function finish_commit()
     local commit_state = singleton
     if commit_state then
         singleton = nil
-        u.system_async({'touch', commit_state.temppath..".exit"})
-        job.wait(commit_state.job, 1000)
-        if #commit_state.job.err_output ~= 0 then
+        u.system({'touch', commit_state.temppath..".exit"})
+        promise.wait(commit_state.promise, 1000)
+        if #commit_state.promise.job.err_output ~= 0 then
             vim.cmd(string.format("echom '%s'",
                 u.remove_trailing_newlines(table.concat(commit_state.job.err_output))))
         end
@@ -54,7 +55,7 @@ local function gitabra_commit(mode)
         table.insert(cmd, "--amend")
     end
 
-    local j = u.system_async(cmd, {
+    local p = u.system_as_promise(cmd, {
             env = {
                 -- Give `git commit` a shell command to run.
                 -- We will signal the shell command to terminate after the user
@@ -67,17 +68,16 @@ local function gitabra_commit(mode)
         })
 
     -- The shell script should send back the location of the commit message file
-    job.wait_for(j, 3000, function()
-        if not u.table_is_empty(j.output) then
+    p:wait_for(3000, function()
+        if not u.table_is_empty(p.job.output) then
             return true
         end
     end)
-    assert(not u.str_is_really_empty(j.output[1]), "Expected to receive the EDITMSG file path, but timedout")
+    assert(not u.str_is_really_empty(p.job.output[1]), "Expected to receive the EDITMSG file path, but timedout")
 
     -- Start editing the commit message file
     -- vim.cmd(string.format('e %s', vim.fn.fnameescape(u.git_dot_git_dir().."/COMMIT_EDITMSG")))
-
-    vim.cmd(string.format('e %s', vim.fn.fnameescape(u.remove_trailing_newlines(j.output[1]))))
+    vim.cmd(string.format('e %s', vim.fn.fnameescape(u.remove_trailing_newlines(p.job.output[1]))))
 
     -- Make sure this buffer goes away once it is hidden
     local bufnr = api.nvim_get_current_buf()
@@ -95,7 +95,7 @@ local function gitabra_commit(mode)
 
     singleton = {
         temppath = temppath,
-        job = j,
+        promise = p,
     }
 end
 

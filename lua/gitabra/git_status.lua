@@ -4,6 +4,7 @@ local outliner = require("gitabra.outliner")
 local api = vim.api
 local patch_parser = require("gitabra.patch_parser")
 local md5 = require("gitabra.md5")
+local promise = require("gitabra.promise")
 
 -- Node types
 local type_section = "section"
@@ -14,23 +15,23 @@ local type_stash_entry = "stash entry"
 local type_recent_commit = "recent commit"
 
 local function git_get_branch()
-  return u.system_async('git branch --show-current', {split_lines=true})
+  return u.system_as_promise('git branch --show-current', {split_lines=true})
 end
 
 local function git_branch_commit_msg()
-  return u.system_async({"git", "show", "--no-patch", "--format='%h %s'"}, {split_lines=true})
+  return u.system_as_promise({"git", "show", "--no-patch", "--format='%h %s'"}, {split_lines=true})
 end
 
 local function git_status()
-  return u.system_async("git status --porcelain", {split_lines=true})
+  return u.system_as_promise("git status --porcelain", {split_lines=true})
 end
 
 local function git_diff_unstaged()
-  return u.system_async("git diff", {merge_output=true})
+  return u.system_as_promise("git diff", {merge_output=true})
 end
 
 local function git_diff_staged()
-  return u.system_async("git diff --cached", {merge_output=true})
+  return u.system_as_promise("git diff --cached", {merge_output=true})
 end
 
 local function git_apply_patch(direction, patch_text)
@@ -40,7 +41,7 @@ local function git_apply_patch(direction, patch_text)
   end
   table.insert(cmd, "-")
 
-  local j = u.system_async(cmd)
+  local j = u.system(cmd)
   j.job:send(patch_text)
   return j
 end
@@ -52,25 +53,25 @@ local function git_discard_hunk(include_staged, patch_text)
   end
   table.insert(cmd, "-")
 
-  local j = u.system_async(cmd)
+  local j = u.system(cmd)
   j.job:send(patch_text)
   return j
 end
 
 local function git_add(rel_filepath)
-  return u.system_async({"git", "add", rel_filepath})
+  return u.system({"git", "add", rel_filepath})
 end
 
 local function git_reset_file(rel_filepath)
-  return u.system_async({"git", "reset", rel_filepath})
+  return u.system({"git", "reset", rel_filepath})
 end
 
 local function git_log_recents()
-  return u.system_async("git log --oneline -n 10 --decorate=short", {split_lines=true})
+  return u.system_as_promise("git log --oneline -n 10 --decorate=short", {split_lines=true})
 end
 
 local function git_stash_list()
-  return u.system_async("git stash list", {split_lines=true})
+  return u.system_as_promise("git stash list", {split_lines=true})
 end
 
 local function parse_ref(ref_str)
@@ -217,18 +218,19 @@ end
 
 
 local function status_info()
-  local root_dir_j = u.git_root_dir_j()
-  local branch_j = git_get_branch()
-  local branch_msg_j = git_branch_commit_msg()
-  local status_j = git_status()
-  local recents_j = git_log_recents()
-  local stash_list_j = git_stash_list()
+  local root_dir_p = u.git_root_dir_p()
+  local branch_p = git_get_branch()
+  local branch_msg_p = git_branch_commit_msg()
+  local status_p = git_status()
+  local recents_p = git_log_recents()
+  local stash_list_p = git_stash_list()
 
-  local jobs = {root_dir_j, branch_j, branch_msg_j, status_j, recents_j, stash_list_j}
+  local ps = {root_dir_p, branch_p, branch_msg_p, status_p, recents_p, stash_list_p}
 
-  local wait_result = job.wait_all(jobs, 2000)
+  local wait_result = promise.wait_all(ps, 2000)
   if not wait_result then
     local funcname = debug.getinfo(1, "n").name
+    print(vim.inspect(ps))
     error(string.format("%s: unable to complete git commands within the alotted time", funcname))
   end
 
@@ -240,7 +242,7 @@ local function status_info()
   local staged = {}
   local unstaged = {}
 
-  for _, line in ipairs(status_j.output) do
+  for _, line in ipairs(status_p.job.output) do
     local fstat = line:sub(1, 2)
     local fname = line:sub(4)
     fname = fname:match("\"(.-)\"") or fname
@@ -266,28 +268,28 @@ local function status_info()
     table.insert(files, entry)
   end
 
-  local commit_msg = branch_msg_j.output[1]
+  local commit_msg = branch_msg_p.job.output[1]
   commit_msg = commit_msg and commit_msg:sub(2, -2) or "No commits yet"
 
   return {
-    git_root = root_dir_j.output[1],
-    branch = branch_j.output[1],
+    git_root = root_dir_p.job.output[1],
+    branch = branch_p.job.output[1],
     last_commit_msg = commit_msg,
     files = files,
     untracked = untracked,
     staged = staged,
     unstaged = unstaged,
-    recents = recents_j.output,
-    stash_list = stash_list_j.output,
+    recents = recents_p.job.output,
+    stash_list = stash_list_p.job.output,
   }
 end
 
 local function patch_infos()
-  local unstaged_j = git_diff_unstaged()
-  local staged_j = git_diff_staged()
+  local unstaged_p = git_diff_unstaged()
+  local staged_p = git_diff_staged()
 
-  local jobs = {unstaged_j, staged_j}
-  local wait_result = job.wait_all(jobs, 2000)
+  local ps = {unstaged_p, staged_p}
+  local wait_result = promise.wait_all(ps, 2000)
   if not wait_result then
     local funcname = debug.getinfo(1, "n").name
     error(string.format("%s: unable to complete git commands within the alotted time", funcname))
@@ -295,12 +297,12 @@ local function patch_infos()
 
   local info = {
     unstaged = {
-      patch_info = patch_parser.patch_info(unstaged_j.output[1]),
-      patch_text = unstaged_j.output[1],
+      patch_info = patch_parser.patch_info(unstaged_p.job.output[1]),
+      patch_text = unstaged_p.job.output[1],
     },
     staged = {
-      patch_info = patch_parser.patch_info(staged_j.output[1]),
-      patch_text = staged_j.output[1],
+      patch_info = patch_parser.patch_info(staged_p.job.output[1]),
+      patch_text = staged_p.job.output[1],
     }
   }
 
@@ -1005,7 +1007,7 @@ local function stage_hunk(hc)
 
 
   local j = git_apply_patch(direction, patch)
-  job.wait(j, 100)
+  u.system_job_wait(j, 100)
 
   if not u.table_is_empty(j.err_output) then
     print_job_error(j)
@@ -1020,7 +1022,7 @@ end
 
 local function stage_file(hc)
   local j = git_add(hc_target_rel_filepath(hc))
-  job.wait(j, 500)
+  u.system_job_wait(j, 500)
   if not u.table_is_empty(j.err_output) then
     print_job_error(j)
   else
@@ -1030,7 +1032,7 @@ end
 
 local function unstage_file(hc)
   local j = git_reset_file(hc_target_rel_filepath(hc))
-  job.wait(j, 500)
+  u.system_job_wait(j, 500)
   if not u.table_is_empty(j.err_output) then
     print_job_error(j)
   else
@@ -1072,8 +1074,8 @@ local function unstage()
 end
 
 local function stage_all()
-  local j =  u.system_async('git add -A', {split_lines=true})
-  job.wait(j, 1000)
+  local j =  u.system('git add -A', {split_lines=true})
+  u.system_job_wait(j, 1000)
   if not u.table_is_empty(j.err_output) then
     print_job_error(j)
   else
@@ -1087,8 +1089,8 @@ local function unstage_all()
     return
   end
 
-  local j =  u.system_async('git reset', {split_lines=true})
-  job.wait(j, 1000)
+  local j =  u.system('git reset', {split_lines=true})
+  u.system_job_wait(j, 1000)
   if not u.table_is_empty(j.err_output) then
     print_job_error(j)
   else
@@ -1121,7 +1123,7 @@ local function discard_hunk()
   local include_staged = hc[type_section].id == "staged"
 
   local j = git_discard_hunk(include_staged, patch)
-  job.wait(j, 1000)
+  u.system_job_wait(j, 1000)
   if not u.table_is_empty(j.err_output) then
     vim.cmd("redraw | echom 'Discard failed'")
   else

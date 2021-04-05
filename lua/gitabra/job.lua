@@ -97,48 +97,5 @@ function M:start()
   end
 end
 
-------------------------------------------------------------------------------------
--- Utilities
---
--- Note that these utilities are meant to be used with util.system_async.
--- Maybe a better place for these functions is in util?
-
-function M.is_job_done(job)
-  return job.done
-end
-
-function M.are_jobs_done(jobs)
-  -- If any of the jobs are not done yet,
-  -- we're not done
-  for _, j in pairs(jobs) do
-    if j.done == false then
-      return false
-    end
-  end
-
-  -- All of the jobs are done...
-  return true
-end
-
--- Wait until either `ms` has elapsed or when `predicate` returns true
-function M.wait_for(job, ms, predicate)
-  return vim.wait(ms, predicate, 5)
-end
-
-function M.wait(job, ms)
-  return vim.wait(ms,
-    function()
-      return job.done
-    end, 5)
-end
-
--- Wait up to `ms` approximately milliseconds until all the jobs are done
-function M.wait_all(jobs, ms)
-  return vim.wait(ms,
-    function()
-      return M.are_jobs_done(jobs)
-    end, 5)
-end
-
 
 return M

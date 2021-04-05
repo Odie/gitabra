@@ -1,6 +1,8 @@
 local job = require('gitabra.job')
 local api = vim.api
 local ut = require('gitabra.util.table')
+local a = require('gitabra.async')
+local promise = require('gitabra.promise')
 
 -- Returns an iterator over each line in `str`
 local function lines(str)
@@ -23,13 +25,19 @@ local function nanotime()
   return vim.loop.hrtime() / 1000000000
 end
 
+-------------------------------------------------------------------------------
+-- Running programs in a separate process
+--
+-- This works a bit like neovim's job controls system, but built
+-- directly over vim.loop in lua.
+
 -- Execute the given command asynchronously
 -- Returns a `results` table.
 -- `done` field indicates if the job has finished running
 -- `output` table stores the output of the executed command
 -- `job` field contains a `gitabra.job` object used to run the command
 --
-local function system_async(cmd, opt)
+local function system(cmd, opt, callback)
   local result = {
     output = {},
     err_output = {},
@@ -76,6 +84,9 @@ local function system_async(cmd, opt)
         result.done = true
         result.stop_time = nanotime()
         result.elapsed_time = result.stop_time - result.start_time
+        if callback then
+          callback(result)
+        end
       end
     })
 
@@ -84,6 +95,53 @@ local function system_async(cmd, opt)
 
   result.job = j
   return result
+end
+
+-- A version of `system` meant to work with async mechanims of `gitabra.async`
+local system_async = a.wrap(system)
+
+-- Returns the `system` call as a promise.
+local function system_as_promise(cmd, opt, p)
+  p = p or promise.new({})
+  p.job = system(cmd, opt, function(j) p:deliver(j.output) end)
+  return p
+end
+
+local function system_job_is_done(j)
+  return j.done
+end
+
+local function system_jobs_are_done(jobs)
+  -- If any of the jobs are not done yet,
+  -- we're not done
+  for _, j in pairs(jobs) do
+    if j.done == false then
+      return false
+    end
+  end
+
+  -- All of the jobs are done...
+  return true
+end
+
+-- Wait until either `ms` has elapsed or when `predicate` returns true
+local function system_job_wait_for(j, ms, predicate)
+  return vim.wait(ms, predicate, 5)
+end
+
+local function system_job_wait(j, ms)
+  return vim.wait(ms,
+    function()
+      return j.done
+    end, 5)
+end
+
+-- Wait up to `ms` approximately milliseconds until all the jobs are done
+function system_job_wait_all(jobs, ms)
+  return vim.wait(ms,
+    function()
+      return M.are_jobs_done(jobs)
+    end, 5)
 end
 
 
@@ -245,14 +303,14 @@ local function within_region(region, lineno)
   end
 end
 
-local function git_root_dir_j()
-  return system_async("git rev-parse --show-toplevel", {split_lines=true})
+local function git_root_dir_p()
+  return system_as_promise("git rev-parse --show-toplevel", {split_lines=true})
 end
 
 local function git_root_dir()
-  local j = git_root_dir_j()
-  job.wait(j, 500)
-  return j.output[1]
+  local p = git_root_dir_p()
+  p:wait(500)
+  return p.job.output[1]
 end
 
 local function git_dot_git_dir()
@@ -431,7 +489,16 @@ return ut.table_copy_into({
     lines = lines,
     lines_array = lines_array,
     interp = interp,
+
+    system = system,
     system_async = system_async,
+    system_as_promise = system_as_promise,
+    system_job_is_done = system_job_is_done,
+    system_jobs_are_done = system_jobs_are_done,
+    system_job_wait_for = system_job_wait_for,
+    system_job_wait = system_job_wait,
+    system_job_wait_all = system_job_wait_all,
+
     node_from_path = node_from_path,
     get_in = node_from_path,
     path_from_node = path_from_node,
@@ -443,7 +510,7 @@ return ut.table_copy_into({
     selected_region = selected_region,
     within_region = within_region,
     nanotime = nanotime,
-    git_root_dir_j = git_root_dir_j,
+    git_root_dir_p = git_root_dir_p,
     git_root_dir = git_root_dir,
     git_dot_git_dir = git_dot_git_dir,
     nvim_commands = nvim_commands,

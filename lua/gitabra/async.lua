@@ -1,6 +1,7 @@
 -- Adapted from https://github.com/ms-jpq/neovim-async-tutorial
 local co = coroutine
 local uv = vim.loop
+local promise = require("gitabra.promise")
 
 -- In libuv async style programming, a function signature usually looks like:
 --   function(param1, param2..., callback)
@@ -29,7 +30,7 @@ local function pong(func, callback)
   -- function to call when
   step = function(...)
     -- We are going to be locked in a sort of co-recursive loop here.
-    -- Here, we're going to repeated resume the coroutine...
+    -- Here, we're going to repeatedly resume the coroutine...
     local stat, ret = co.resume(thread, ...)
     assert(stat, ret)
 
@@ -50,8 +51,6 @@ local function pong(func, callback)
   end
 
   -- Start step function chain
-  -- We will not return from this function call until the coroutine
-  -- is says it has finished running.
   step()
 end
 
@@ -128,15 +127,48 @@ local sleep_ms = function(ms, callback)
   end)
 end
 
+-- Run a thunk and wait for the result
+local function run(defer, ms)
+  local result
+  local result_available = false
+
+  defer(function (ret)
+    result = ret
+    result_available = true
+  end)
+
+  vim.wait(ms or 1000,
+    function()
+      return result_available
+    end, 5)
+  assert(result_available)
+
+  return result
+end
+
+-- Starts the async task and returns promise where the result will be delivered
+local function as_promise(defer)
+  local p = promise.new({})
+
+  defer(function (ret)
+    p:deliver(ret)
+  end)
+
+  return p
+end
+
 local function main_loop(f)
   vim.schedule(f)
 end
 
 return {
+  step = pong,
+  run = run,
   sync = wrap(pong),
   wait = await,
   wait_all = await_all,
   wrap = wrap,
   sleep_ms = wrap(sleep_ms),
   main_loop = main_loop,
+  as_promise = as_promise,
 }
