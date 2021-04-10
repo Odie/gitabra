@@ -3,6 +3,7 @@ local api = vim.api
 local ut = require('gitabra.util.table')
 local a = require('gitabra.async')
 local promise = require('gitabra.promise')
+local zipper = require("gitabra.zipper")
 
 -- Returns an iterator over each line in `str`
 local function lines(str)
@@ -484,6 +485,23 @@ local function nvim_line_zero_idx(place)
   return vim.fn.line(place)-1
 end
 
+local function zipper_picks_by_type(z_in)
+  local z = z_in:clone()
+  local picks = {}
+  local node = z:node()
+
+  while true do
+    if node.type then
+      picks[node.type] = node
+    end
+    if not z:up() then
+      break
+    end
+    node = z:node()
+  end
+
+  return picks
+end
 
 return ut.table_copy_into({
     lines = lines,
@@ -525,6 +543,7 @@ return ut.table_copy_into({
     hl_group_attrs = hl_group_attrs,
     hl_group_attrs_to_str = hl_group_attrs_to_str,
     nvim_line_zero_idx = nvim_line_zero_idx,
+    zipper_picks_by_type = zipper_picks_by_type,
   },
   ut,
   require('gitabra.util.functional'),

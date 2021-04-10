@@ -1,18 +1,10 @@
 local u = require("gitabra.util")
-local job = require("gitabra.job")
 local outliner = require("gitabra.outliner")
+local ou = require("gitabra.outliner_util")
 local api = vim.api
 local patch_parser = require("gitabra.patch_parser")
 local md5 = require("gitabra.md5")
 local promise = require("gitabra.promise")
-
--- Node types
-local type_section = "section"
-local type_file = "file"
-local type_hunk_header = "hunk header"
-local type_hunk_content = "hunk content"
-local type_stash_entry = "stash entry"
-local type_recent_commit = "recent commit"
 
 local function git_get_branch()
   return u.system_as_promise('git branch --show-current', {split_lines=true})
@@ -295,18 +287,12 @@ local function patch_infos()
     error(string.format("%s: unable to complete git commands within the alotted time", funcname))
   end
 
-  local info = {
-    unstaged = {
-      patch_info = patch_parser.patch_info(unstaged_p.job.output[1]),
-      patch_text = unstaged_p.job.output[1],
-    },
-    staged = {
-      patch_info = patch_parser.patch_info(staged_p.job.output[1]),
-      patch_text = staged_p.job.output[1],
-    }
+  local infos = {
+    unstaged = patch_parser.parse(unstaged_p.job.output[1]),
+    staged = patch_parser.parse(staged_p.job.output[1]),
   }
 
-  return info
+  return infos
 end
 
 local function setup_window()
@@ -418,43 +404,8 @@ local function get_sole_status_screen()
 end
 
 local function toggle_fold_at_current_line()
-  local lineno = vim.fn.line(".") - 1
-  local outline = get_sole_status_screen().outline
-  if not outline then
-    return
-  end
-
-  local z = outline:node_zipper_at_lineno(lineno)
-  if not z then
-    return
-  end
-
-  local node
-
-  -- Which node do we actually want to collapse?
-  -- If the user is targetting a leaf node, like the
-  -- contents of a hunk, that node itself cannot be
-  -- collapsed. Instead, we're going to collapse it's
-  -- parent/header.
-  if not z:has_children() then
-    node = z:parent_node()
-    if node == outline.root then
-      return
-    end
-  else
-    node = z:node()
-  end
-  node.collapsed = not node.collapsed
-
-  -- Refresh the buffer
-  outline:refresh()
-
-  -- Move the cursor to whatever we've just collapsed
-  -- All visible node's lineno should have been updated,
-  -- so we can just use the contents of that field directly
-  vim.cmd(tostring(node.lineno+1))
+  ou.outline_toggle_fold_at_current_line(get_sole_status_screen().outline)
 end
-
 
 -- Return the type of hunk line we are looking at.
 -- Returns either "+", "-", or "common"
@@ -495,52 +446,28 @@ end
 -- Assuming we have a zipper that's targetting a hunk,
 -- build a description to make it easier ask useful question with
 local function hunk_context(z)
-  local hc = {}
-  local node
-
-  node = z:node()
-  if node.type == type_hunk_content then
-    hc[type_hunk_content] = node
-    z:up()
-    node = z:node()
-  end
-
-  if node.type == type_hunk_header then
-    hc[type_hunk_header] = node
-    z:up()
-    node = z:node()
-  end
-
-  if node.type == type_file then
-    hc[type_file] = node
-    z:up()
-    node = z:node()
-  end
-
-  if node.type == type_section then
-    hc[type_section] = node
-  end
+  local hc = u.zipper_picks_by_type(z)
 
   -- The zipper may have pointed to a hunk header
   -- Since a hunk header should only have a single hunk content node attached,
   -- it's straightforward to fill that in now.
   -- The rest of the code will not have to deal with these cases.
-  if hc[type_hunk_content] == nil and hc[type_hunk_header] then
-    hc[type_hunk_content] = hc[type_hunk_header].children[1]
+  if hc[ou.type_hunk_content] == nil and hc[ou.type_hunk_header] then
+    hc[ou.type_hunk_content] = hc[ou.type_hunk_header].children[1]
   end
 
   return hc
 end
 
 local function hc_target_full_filepath(hc)
-  local file = hc[type_file]
+  local file = hc[ou.type_file]
   if file then
     return string.format("%s/%s", u.git_root_dir(), file.filename)
   end
 end
 
 local function hc_target_rel_filepath(hc)
-  local file = hc[type_file]
+  local file = hc[ou.type_file]
   if file then
     return file.filename
   end
@@ -554,6 +481,20 @@ local function outline_zipper_at_current_line()
   end
 
   return outline:node_zipper_at_lineno(lineno)
+end
+
+local function any_win_except(win_avoid)
+  local wins = api.nvim_list_wins()
+  local target_win
+  for _, win in ipairs(wins) do
+    if win ~= win_avoid then
+      target_win = win
+      break
+    end
+  end
+  -- print("avoiding win:", win_avoid)
+  -- print("selected win:", target_win)
+  return target_win
 end
 
 -- Jumps to the file and line of the hunk line under the cursor
@@ -572,65 +513,37 @@ local function jump_to_location()
   local hc = hunk_context(z)
 
   -- Is the user targetting a specific line of a hunk?
-  if hc[type_hunk_content] then
-    local hunk_start = patch_parser.parse_hunk_header(hc[type_hunk_header].text[1])[2].start
-    local rellineno = lineno - hc[type_hunk_content].lineno + 1
-    local line_type = hunk_line_type(hc[type_hunk_content].text[rellineno])
+  if hc[ou.type_hunk_content] then
+    local hunk_start = patch_parser.parse_hunk_header(hc[ou.type_hunk_header].text[1])[2].start
+    local rellineno = lineno - hc[ou.type_hunk_content].lineno + 1
+    local line_type = hunk_line_type(hc[ou.type_hunk_content].text[rellineno])
     if line_type == "-" then
       line_type = "common"
     end
-    local count = hunk_lines_count_type(hc[type_hunk_content].text, line_type, rellineno)
+    local count = hunk_lines_count_type(hc[ou.type_hunk_content].text, line_type, rellineno)
     vim.cmd(string.format("e +%i %s", hunk_start+count-1, hc_target_full_filepath(hc)))
-  elseif hc[type_hunk_header] then
-    local hunk_start = patch_parser.parse_hunk_header(hc[type_hunk_header].text[1])[2].start
+  elseif hc[ou.type_hunk_header] then
+    local hunk_start = patch_parser.parse_hunk_header(hc[ou.type_hunk_header].text[1])[2].start
     vim.cmd(string.format("e +%i %s", hunk_start, hc_target_full_filepath(hc)))
-  elseif hc[type_file] then
+  elseif hc[ou.type_file] then
     vim.cmd(string.format("e %s", hc_target_full_filepath(hc)))
+  elseif hc[ou.type_recent_commit] then
+    local sc = get_sole_status_screen()
+    local target_win = any_win_except(sc.winnr)
+
+    require("gitabra.git_show").git_show({
+      winnr = target_win,
+      rev = hc[ou.type_recent_commit].rev,
+    })
+
   end
-end
-
-
-local function populate_hunks(outline, file_node, patch_info, filepath)
-  local diff = patch_parser.find_file(patch_info.patch_info, filepath)
-  if diff then
-    for _, hunk in ipairs(diff.hunks) do
-      -- Add hunk header as its own node
-      -- These look something like "@@ -16,10 +17,14 @@"
-      local heading = outline:add_node(file_node, {
-          text = hunk.header_text,
-          type = type_hunk_header,
-        })
-
-      -- Add the content of the hunk
-      outline:add_node(heading, {
-          text = string.sub(patch_info.patch_text, hunk.content_start, hunk.content_end),
-          type = type_hunk_content,
-        })
-    end
-  end
-end
-
-local function make_file_node(filename, mod_type)
-  local heading
-  if mod_type then
-    heading = string.format("%s   %s", mod_type, filename)
-  else
-    heading = filename
-  end
-  return {
-    text = u.markup({{
-          group = "GitabraStatusFile",
-          text = heading
-    }}),
-    filename = filename,
-    type = type_file,
-  }
 end
 
 local function make_recent_commit_node(log_entry)
   return {
     text = {format_log_recent_entry(log_entry)},
-    type = type_recent_commit,
+    rev = log_entry.rev,
+    type = ou.type_recent_commit,
   }
 end
 
@@ -757,13 +670,13 @@ local function gitabra_status()
             group = "GitabraStatusSection",
             text = "Untracked"
         }}),
-        type = type_section,
+        type = ou.type_section,
         id = "untracked",
         padlines_before = 1,
         show_child_count = true,
     })
     for _, file in pairs(st_info.untracked) do
-      outline:add_node(section, make_file_node(file.name))
+      outline:add_node(section, ou.make_file_node(file.name))
     end
   end
 
@@ -773,14 +686,14 @@ local function gitabra_status()
             group = "GitabraStatusSection",
             text = "Unstaged"
         }}),
-        type = type_section,
+        type = ou.type_section,
         id = "unstaged",
         padlines_before = 1,
         show_child_count = true,
     })
     for _, file in pairs(st_info.unstaged) do
-      local file_node = outline:add_node(section, make_file_node(file.name, file.working))
-      populate_hunks(outline, file_node, patches.unstaged, file.name)
+      local file_node = outline:add_node(section, ou.make_file_node(file.name, file.working))
+      ou.populate_hunks_by_filepath(outline, file_node, patches.unstaged, file.name)
       file_node.collapsed = true
     end
   end
@@ -791,14 +704,14 @@ local function gitabra_status()
           group = "GitabraStatusSection",
           text = "Staged"
         }}),
-        type = type_section,
+        type = ou.type_section,
         id = "staged",
         padlines_before = 1,
         show_child_count = true,
     })
     for _, file in pairs(st_info.staged) do
-      local file_node = outline:add_node(section, make_file_node(file.name, file.index))
-      populate_hunks(outline, file_node, patches.staged, file.name)
+      local file_node = outline:add_node(section, ou.make_file_node(file.name, file.index))
+      ou.populate_hunks_by_filepath(outline, file_node, patches.staged, file.name)
       file_node.collapsed = true
     end
   end
@@ -809,7 +722,7 @@ local function gitabra_status()
           group = "GitabraStatusSection",
           text = "Stashes"
         }}),
-        type = type_section,
+        type = ou.type_section,
         id = "stashes",
         padlines_before = 1,
         collapsed = true,
@@ -819,7 +732,7 @@ local function gitabra_status()
     for _, stash_entry_str in ipairs(st_info.stash_list) do
       outline:add_node(section, {
         text = format_stash_entry(parse_stash_entry(stash_entry_str)),
-        type = type_stash_entry,
+        type = ou.type_stash_entry,
       })
     end
   end
@@ -830,7 +743,7 @@ local function gitabra_status()
           group = "GitabraStatusSection",
           text = "Recent commits"
         }}),
-        type = type_section,
+        type = ou.type_section,
         id = "recents",
         padlines_before = 1,
         collapsed = true,
@@ -945,7 +858,7 @@ end
 --
 local function patch_from_selected_hunk(hc, for_discard)
   local patches = get_sole_status_screen().patches
-  local patch = patches[hc[type_section].id]
+  local patch = patches[hc[ou.type_section].id]
 
   -- Generate a patch for the selected hunk
   -- To do that, we need a file diff header, the hunk header, and the hunk contents
@@ -959,16 +872,16 @@ local function patch_from_selected_hunk(hc, for_discard)
   local diff_header = patch_parser.file_diff_get_header_contents(file_diff, patch.patch_text)
   diff_header = u.remove_trailing_newlines(diff_header)
 
-  local hunk_header = hc[type_hunk_header].text[1]
-  local hunk_content = hc[type_hunk_content].text
+  local hunk_header = hc[ou.type_hunk_header].text[1]
+  local hunk_content = hc[ou.type_hunk_content].text
 
   -- If the user has selected just part of the hunk, we need to
   -- make some adjustments to the header and the content
   if in_visual_mode() then
     local region = u.selected_region()
-    local offset = hc[type_hunk_content].lineno
-    local result = partial_hunk(hc[type_hunk_content].text, {region[1]-offset, region[2]-offset}, for_discard)
-    local hh = patch_parser.parse_hunk_header(hc[type_hunk_header].text[1])
+    local offset = hc[ou.type_hunk_content].lineno
+    local result = partial_hunk(hc[ou.type_hunk_content].text, {region[1]-offset, region[2]-offset}, for_discard)
+    local hh = patch_parser.parse_hunk_header(hc[ou.type_hunk_header].text[1])
     hh[1].count = result.unmarked + result.removed
     hh[2].count = result.unmarked + result.added
 
@@ -997,7 +910,7 @@ end
 
 local function stage_hunk(hc)
   local direction
-  if hc[type_section].id == "unstaged" then
+  if hc[ou.type_section].id == "unstaged" then
     direction = "stage"
   else
     direction = "unstage"
@@ -1047,11 +960,11 @@ local function stage()
   local hc = hunk_context(z)
 
   -- Are we pointing at a hunk in the unstaged section?
-  if (node.type == type_hunk_content or node.type == type_hunk_header) and hc[type_section].id == "unstaged" then
+  if (node.type == ou.type_hunk_content or node.type == ou.type_hunk_header) and hc[ou.type_section].id == "unstaged" then
     stage_hunk(hc)
 
   -- Are we pointing at a file in the untracked or unstaged section?
-  elseif node.type == type_file and (hc[type_section].id == "untracked" or hc[type_section].id == "unstaged") then
+  elseif node.type == ou.type_file and (hc[ou.type_section].id == "untracked" or hc[ou.type_section].id == "unstaged") then
     stage_file(hc)
   end
 end
@@ -1062,13 +975,13 @@ local function unstage()
   local hc = hunk_context(z)
 
   -- We're only going to deal with items in the staged section
-  if hc[type_section].id ~= "staged" then
+  if hc[ou.type_section].id ~= "staged" then
     return
   end
 
-  if node.type == type_hunk_content or node.type == type_hunk_header then
+  if node.type == ou.type_hunk_content or node.type == ou.type_hunk_header then
     stage_hunk(hc)
-  elseif node.type == type_file then
+  elseif node.type == ou.type_file then
     unstage_file(hc)
   end
 end
@@ -1101,7 +1014,7 @@ end
 local function discard_hunk()
   local z = outline_zipper_at_current_line()
   local node = z:node()
-  if not (node.type == type_hunk_content or node.type == type_hunk_header) then
+  if not (node.type == ou.type_hunk_content or node.type == ou.type_hunk_header) then
     print("Oops... Don't know how to discard this yet...")
     return
   end
@@ -1120,7 +1033,7 @@ local function discard_hunk()
 
   local hc = hunk_context(z)
   local patch = patch_from_selected_hunk(hc, true)
-  local include_staged = hc[type_section].id == "staged"
+  local include_staged = hc[ou.type_section].id == "staged"
 
   local j = git_discard_hunk(include_staged, patch)
   u.system_job_wait(j, 1000)
@@ -1167,14 +1080,14 @@ local function update_hunk_hint_internal()
   end
 
   local hc = hunk_context(z:clone())
-  if not hc[type_section] then
+  if not hc[ou.type_section] then
     return "unplace"
   end
-  if hc[type_section].id ~= "unstaged" and hc[type_section].id ~= "staged" then
+  if hc[ou.type_section].id ~= "unstaged" and hc[ou.type_section].id ~= "staged" then
     return "unplace"
   end
 
-  local n1 = hc[type_hunk_header]
+  local n1 = hc[ou.type_hunk_header]
   if not n1 then
     return "unplace"
   end
@@ -1198,10 +1111,9 @@ local function update_hunk_hint_internal()
       unplace_hunk_hints()
       local lineno1 = n1.lineno+1
       local lineno2 = n2.lineno+1
-      if n2.type == type_section then
+      if n2.type == ou.type_section then
         lineno2 = lineno2 - n2.padlines_before
       end
-      local sc = get_sole_status_screen()
       hunk_hint.node_ids[1] = n1.id
       hunk_hint.node_ids[2] = n2.id
       hunk_hint.signs[1] = vim.fn.sign_place(0, hunk_hint_sign_group, "GitabraNodeActiveHeader", sc.bufnr, {lnum = lineno1})
@@ -1214,7 +1126,6 @@ local function update_hunk_hint_internal()
     if node_id(n1) ~= hunk_hint.node_ids[1] then
       vim.fn.sign_unplace(hunk_hint_sign_group)
       local lineno1 = n1.lineno+1
-      local sc = get_sole_status_screen()
       hunk_hint.node_ids[1] = n1.id
       hunk_hint.signs[1] = vim.fn.sign_place(0, hunk_hint_sign_group, "GitabraNodeActiveHeader", sc.bufnr, {lnum = lineno1})
       hunk_hint.lines[1] = n1.lineno

@@ -32,7 +32,7 @@ local function table_get_last(t)
 end
 
 local function table_clone(t)
-  return {unpack(t)}
+  return table_copy_into({}, t)
 end
 
 local function table_lazy_get(table, key, default)
@@ -227,6 +227,53 @@ local function table_approximate_type(t)
   return approx_types
 end
 
+local function interpret_idx(idx, max)
+  if idx < 0 then
+    while idx < 0 do
+      idx = idx + max
+    end
+    idx = idx + 1
+  elseif idx > max then
+    idx = max
+  end
+  return idx
+end
+
+-- Matches the behavior of string.sub
+local function table_slice(t, first, last)
+  local count = #t
+
+  first = interpret_idx(first, count)
+  if last == nil then
+    last = count
+  else
+    last = interpret_idx(last, count)
+  end
+
+  if last < first then
+    return {}
+  end
+
+  -- return first, last
+  local result = {}
+  local i = first
+
+  while i <= last do
+    table.insert(result, t[i])
+    i = i + 1
+  end
+
+  return result
+end
+
+local function table_first(t)
+  return t[1]
+end
+
+local function table_rest(t)
+  return table_slice(t, 2)
+end
+
 
 return {
   table_copy_into = table_copy_into,
@@ -244,4 +291,7 @@ return {
   table_array_find_by = table_array_find_by,
   table_is_empty = table_is_empty,
   table_approximate_type = table_approximate_type,
+  table_slice = table_slice,
+  table_first = table_first,
+  table_rest = table_rest,
 }

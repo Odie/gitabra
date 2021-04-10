@@ -200,6 +200,13 @@ local function patch_info(patch_text)
   return result
 end
 
+local function parse(patch_text)
+  return {
+    patch_info = patch_info(patch_text),
+    patch_text = patch_text,
+  }
+end
+
 -- Given the an output from `patch_info`,
 -- return a file diff entry that matches given `filepath`
 local function find_file(infos, filepath)
@@ -227,4 +234,5 @@ return {
   parse_hunk_header = parse_hunk_header,
   make_hunk_header = make_hunk_header,
   file_diff_get_header_contents = file_diff_get_header_contents,
+  parse = parse,
 }
