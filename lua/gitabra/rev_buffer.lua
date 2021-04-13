@@ -131,9 +131,9 @@ end
 local function setup_keybinds(bufnr)
   local function set_keymap(...) vim.api.nvim_buf_set_keymap(bufnr, ...) end
   local opts = { noremap=true, silent=true }
-  set_keymap('n', '<tab>', '<cmd>lua require("gitabra.git_show").toggle_fold_at_current_line()<cr>', opts)
-  set_keymap('n', '<enter>', '<cmd>lua require("gitabra.git_show").jump_to_location()<cr>', opts)
-  set_keymap('n', 'q', '<cmd>lua require("gitabra.git_show").close_rev_buf()<cr>', opts)
+  set_keymap('n', '<tab>', '<cmd>lua require("gitabra.rev_buffer").toggle_fold_at_current_line()<cr>', opts)
+  set_keymap('n', '<enter>', '<cmd>lua require("gitabra.rev_buffer").jump_to_location()<cr>', opts)
+  set_keymap('n', 'q', '<cmd>lua require("gitabra.rev_buffer").close_rev_buf()<cr>', opts)
 end
 
 local function setup_buffer()
@@ -183,7 +183,7 @@ local function rev_buf_activate(rev_buf)
   rev_buf.outline:refresh()
 end
 
-local function git_show_inner(opts)
+local function show_inner(opts)
   module_initialize()
 
   local existing_rev_buf = find_active_rev_buf(opts)
@@ -303,20 +303,20 @@ local function git_show_inner(opts)
   u.nvim_commands([[
     augroup CleanupRevBuffer
       autocmd! * <buffer>
-      autocmd BufUnload <buffer> lua require('gitabra.git_show').remove_rev_buf_by_bufnr(vim.fn.expand("<abuf>"))
+      autocmd BufUnload <buffer> lua require('gitabra.rev_buffer').remove_rev_buf_by_bufnr(vim.fn.expand("<abuf>"))
     augroup END
     ]], true)
 end
 
-local function git_show(opts)
-  local ok, res = xpcall(git_show_inner, debug.traceback, opts)
+local function show(opts)
+  local ok, res = xpcall(show_inner, debug.traceback, opts)
   if not ok then
     print(res)
   end
 end
 
 return {
-  git_show = git_show,
+  show = show,
   toggle_fold_at_current_line = toggle_fold_at_current_line,
   close_rev_buf = close_rev_buf,
   active_rev_bufs = active_rev_bufs,

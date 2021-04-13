@@ -515,7 +515,7 @@ local function jump_to_location()
   elseif hc[ou.type_recent_commit] then
     local target_win = any_win_except(sc.winnr)
 
-    require("gitabra.git_show").git_show({
+    require("gitabra.rev_buffer").show({
       git_root = sc.git_root,
       winnr = target_win,
       rev = hc[ou.type_recent_commit].rev,
