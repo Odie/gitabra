@@ -11,13 +11,6 @@ local api = vim.api
 local active_revisions = {}
 local active_revision = {}
 
-local revision_header_format = [[
-Author:     %aN <%aE>
-AuthorDate: %ad
-Commit:     %cN <%cE>
-CommitDate: %cd
-]]
-
 local module_initialized = false
 local function module_initialize()
   if module_initialized then
@@ -46,9 +39,8 @@ end
 
 local function commit_summary(commit_summary_lines)
   local header = u.table_slice(commit_summary_lines, 1, 5)
-
   local stat_summary = u.trim(u.table_get_last(commit_summary_lines))
-  local stat_entry_count = string.match(stat_summary, "(%d+) files")
+  local stat_entry_count = string.match(stat_summary, "(%d+) file")
   local stat_start = stat_entry_count * -1 - 1
   local stat_details = u.map(u.table_slice(commit_summary_lines, stat_start, -2), u.trim)
 
@@ -71,13 +63,6 @@ local function git_commit_patch(rev)
   return u.system_as_promise({"git", "show", "--format=", rev}, {merge_output=true})
 end
 
--- local function task_git_commit_msg(rev)
---   return a.sync(function ()
---     local j = a.wait(u.system_async({"git", "show", "--", "--stat", "--no-patch", rev}, {split_lines=true}))
---     return j.output
---   end)
--- end
-
 local function task_git_commit_parent(rev)
   return a.sync(function ()
     local j = a.wait(u.system_async({"git", "rev-list", "-1", "--parents", rev}, {split_lines=true}))
@@ -86,7 +71,7 @@ local function task_git_commit_parent(rev)
 end
 
 local function git_show_with_format(format, rev)
-  return u.system_as_promise({"git", "show", string.format("--format=%s", format), "--no-patch", "--decorate=full", rev}, {split_lines=true})
+  return u.system_as_promise({"git", "show", string.format("--format=%s", format), "--no-patch", "--decorate=short", rev}, {split_lines=true})
 end
 
 local function git_commit_msg(rev)
@@ -95,10 +80,6 @@ end
 
 local function git_ref_labels(rev)
   return git_show_with_format("%D", rev)
-end
-
-local function git_rev_header(rev)
-  return git_show_with_format(revision_header_format, rev)
 end
 
 local function toggle_fold_at_current_line()
@@ -158,7 +139,7 @@ local function setup_window()
   return api.nvim_get_current_win()
 end
 
-local function git_show(opts)
+local function git_show_inner(opts)
   module_initialize()
   local rev_buf = u.table_clone(opts)
 
@@ -191,13 +172,16 @@ local function git_show(opts)
 
   ----------------------------------------------------------------
   -- Author info
-  local refs = u.markup(u.map(ou.parse_refs(rev_info.ref_labels), ou.format_ref))
-  table.insert(refs, {
+  local rev_text = u.markup({})
+  if rev_info.ref_labels then
+    u.table_copy_into(rev_text, u.map(ou.parse_refs(rev_info.ref_labels), ou.format_ref))
+  end
+  table.insert(rev_text, {
     group = "GitabraRev",
     text = rev_info.summary.commit_id,
   })
   local commit_header_node = outline:add_node(nil, {
-      text = refs,
+      text = rev_text,
       type = ou.type_section,
       id = "CommitHeader",
     }
@@ -259,9 +243,15 @@ local function git_show(opts)
   active_revision = rev_buf
 end
 
+local function git_show(rev)
+  local ok, res = xpcall(git_show_inner, debug.traceback, rev)
+  if not ok then
+    print(res)
+  end
+end
+
 return {
   git_show = git_show,
   toggle_fold_at_current_line = toggle_fold_at_current_line,
   restore_old_buffer = restore_old_buffer,
-  task_git_commit_summary = task_git_commit_summary,
 }

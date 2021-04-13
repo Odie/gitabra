@@ -104,6 +104,13 @@ local function parse_ref(ref_str)
     return result
   end
 
+  name = string.match(ref_str, "^refs/heads/(.*)$")
+  if name then
+    result.name = name
+    result["local"] = true
+    return result
+  end
+
   local remote
   remote, name = string.match(ref_str, "^(.-)/(.*)$")
   if remote and name then
