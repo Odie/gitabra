@@ -498,6 +498,7 @@ local function jump_to_location()
     local target_win = any_win_except(sc.winnr)
 
     require("gitabra.git_show").git_show({
+      git_root = sc.git_root,
       winnr = target_win,
       rev = hc[ou.type_recent_commit].rev,
     })
@@ -725,6 +726,7 @@ local function gitabra_status()
   -- The global sc is the only way that function can find the currently active outline.
   sc_n.outline = outline
   sc_n.patches = patches
+  sc_n.git_root = st_info.git_root
   --------------------------------------------------------------------
 
   -- Looking at different git repo than last time? Use the new state

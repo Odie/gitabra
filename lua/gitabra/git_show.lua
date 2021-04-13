@@ -8,8 +8,23 @@ local api = vim.api
 
 -- List of all file revisions being viewed.
 -- filepath => revision_context
-local active_revisions = {}
-local active_revision = {}
+local active_rev_bufs = {}
+
+local function rev_buf_id(opts)
+  return string.format("%s/%s", opts.git_root, opts.rev)
+end
+
+local function find_active_rev_buf(opts)
+  assert(opts.git_root)
+  assert(opts.rev)
+  return active_rev_bufs[rev_buf_id(opts)]
+end
+
+local function get_current_rev_buf()
+  assert(vim.b.rev_buf_id)
+  return active_rev_bufs[vim.b.rev_buf_id]
+end
+
 
 local module_initialized = false
 local function module_initialize()
@@ -83,12 +98,25 @@ local function git_ref_labels(rev)
 end
 
 local function toggle_fold_at_current_line()
-  ou.outline_toggle_fold_at_current_line(active_revision.outline)
+  local rev_buf = get_current_rev_buf()
+  if rev_buf then
+    ou.outline_toggle_fold_at_current_line(rev_buf.outline)
+  end
 end
 
-local function restore_old_buffer()
-  if active_revision.old_bufnr then
-    api.nvim_set_current_buf(active_revision.old_bufnr)
+local function close_rev_buf()
+  local rev_buf = get_current_rev_buf()
+  if rev_buf then
+    active_rev_bufs[rev_buf.id] = nil
+
+    -- When the revision buffer was created, it probably kicked another buffer
+    -- out of the current window.
+    -- Try to activate that buffer if possible
+    if rev_buf and rev_buf.old_bufnr and api.nvim_buf_is_valid(rev_buf.old_bufnr) then
+      api.nvim_set_current_buf(rev_buf.old_bufnr)
+    end
+
+    api.nvim_buf_delete(rev_buf.bufnr, {})
   end
 end
 
@@ -97,12 +125,11 @@ local function setup_keybinds(bufnr)
   local opts = { noremap=true, silent=true }
   set_keymap('n', '<tab>', '<cmd>lua require("gitabra.git_show").toggle_fold_at_current_line()<cr>', opts)
   set_keymap('n', '<enter>', '<cmd>lua require("gitabra.git_show").jump_to_location()<cr>', opts)
-  set_keymap('n', 'q', '<cmd>lua require("gitabra.git_show").restore_old_buffer()<cr>', opts)
+  set_keymap('n', 'q', '<cmd>lua require("gitabra.git_show").close_rev_buf()<cr>', opts)
 end
 
 local function setup_buffer()
   local buf = vim.api.nvim_create_buf(true, false)
-  -- api.nvim_buf_set_name(buf, status_buf_name)
   vim.bo[buf].filetype = 'GitabraRevision'
   vim.bo[buf].swapfile = false
   vim.bo[buf].buftype = 'nofile'
@@ -139,8 +166,22 @@ local function setup_window()
   return api.nvim_get_current_win()
 end
 
+local function rev_buf_activate(rev_buf)
+  api.nvim_set_current_win(rev_buf.winnr)
+  rev_buf.old_bufnr = api.nvim_get_current_buf()
+  api.nvim_set_current_buf(rev_buf.bufnr)
+  rev_buf.outline:refresh()
+end
+
 local function git_show_inner(opts)
   module_initialize()
+
+  local existing_rev_buf = find_active_rev_buf(opts)
+  if existing_rev_buf then
+    rev_buf_activate(existing_rev_buf)
+    return
+  end
+
   local rev_buf = u.table_clone(opts)
 
   if not rev_buf.winnr then
@@ -236,15 +277,16 @@ local function git_show_inner(opts)
     end
   end
 
-  api.nvim_set_current_win(rev_buf.winnr)
-  rev_buf.old_bufnr = api.nvim_get_current_buf()
-  api.nvim_set_current_buf(rev_buf.bufnr)
-  outline:refresh()
-  active_revision = rev_buf
+  local id = rev_buf_id(opts)
+  rev_buf.id = id
+  active_rev_bufs[rev_buf.id] = rev_buf
+  api.nvim_buf_set_name(rev_buf.bufnr, rev_buf.id)
+  rev_buf_activate(rev_buf)
+  vim.b.rev_buf_id = rev_buf.id
 end
 
-local function git_show(rev)
-  local ok, res = xpcall(git_show_inner, debug.traceback, rev)
+local function git_show(opts)
+  local ok, res = xpcall(git_show_inner, debug.traceback, opts)
   if not ok then
     print(res)
   end
@@ -253,5 +295,5 @@ end
 return {
   git_show = git_show,
   toggle_fold_at_current_line = toggle_fold_at_current_line,
-  restore_old_buffer = restore_old_buffer,
+  close_rev_buf = close_rev_buf,
 }
