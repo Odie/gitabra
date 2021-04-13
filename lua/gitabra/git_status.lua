@@ -66,28 +66,6 @@ local function git_stash_list()
   return u.system_as_promise("git stash list", {split_lines=true})
 end
 
-local function parse_ref(ref_str)
-  ref_str = u.trim(ref_str)
-  local result =  {}
-  local name = string.match(ref_str, "^HEAD %-> (.*)$")
-  if name then
-    result.name = name
-    result.current_branch = true
-    return result
-  end
-
-  local remote
-  remote, name = string.match(ref_str, "^(.-)/(.*)$")
-  if remote and name then
-    result.name = name
-    result.remote = remote
-    return result
-  end
-
-  result.name = ref_str
-  return result
-end
-
 local function parse_log_recent_entry(log_entry_str)
   -- A recent commit line will look like either:
   -- "abcdefg (ref1, ref2, ...) some commit message here"
@@ -106,22 +84,10 @@ local function parse_log_recent_entry(log_entry_str)
       msg = msg
   }
   if refs then
-      item.refs = u.map(u.string_split_by_pattern(refs, ","), parse_ref)
+      -- item.refs = u.map(u.string_split_by_pattern(refs, ","), ou.parse_ref)
+      item.refs = ou.parse_refs(refs)
   end
   return item
-end
-
-local function format_ref(ref)
-  local result = u.markup({ text = ref.name })
-  if ref.current_branch then
-    result.group = "GitabraCurrentBranch"
-  elseif ref.remote then
-    result.group = "GitabraRemoteRef"
-    result.text = string.format("%s/%s", ref.remote, ref.name)
-  else
-    result.group = "GitabraBranch"
-  end
-  return result
 end
 
 local function format_log_recent_entry(log_entry)
@@ -131,7 +97,7 @@ local function format_log_recent_entry(log_entry)
     }})
 
     if log_entry.refs then
-      u.table_concat(entry, u.map(log_entry.refs, format_ref))
+      u.table_concat(entry, u.map(log_entry.refs, ou.format_ref))
     end
 
     table.insert(entry, log_entry.msg)

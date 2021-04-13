@@ -18,6 +18,20 @@ Commit:     %cN <%cE>
 CommitDate: %cd
 ]]
 
+local module_initialized = false
+local function module_initialize()
+  if module_initialized then
+    return
+  end
+
+  local attrs = u.hl_group_attrs("Yellow")
+  attrs.gui = "bold"
+  attrs.cterm  = "bold"
+  vim.cmd(string.format("highlight GitabraRevBufID %s", u.hl_group_attrs_to_str(attrs)))
+
+  module_initialized = true
+end
+
 -- The only reason why we're running these jobs with the async library is to
 -- try to pull the locations where the data is requested closer to the place where
 -- data is parsed.
@@ -39,7 +53,7 @@ local function commit_summary(commit_summary_lines)
   local stat_details = u.map(u.table_slice(commit_summary_lines, stat_start, -2), u.trim)
 
   return {
-    commit_id = u.table_first(header),
+    commit_id = u.string_split_by_pattern(u.table_first(header), " ")[2],
     header = u.table_rest(header),
     stat_summary = stat_summary,
     stat_details = stat_details,
@@ -120,7 +134,9 @@ end
 local function gather_info(rev)
   local commit_summary_p = a.as_promise(task_git_commit_summary(rev))
   local commit_patch_p = git_commit_patch(rev)
-  local ps = {commit_summary_p, commit_patch_p}
+  local ref_labels_p = git_ref_labels(rev)
+  local msg_p = git_commit_msg(rev)
+  local ps = {commit_summary_p, commit_patch_p, ref_labels_p, msg_p}
 
   local wait_result = promise.wait_all(ps, 2000)
   if not wait_result then
@@ -130,8 +146,10 @@ local function gather_info(rev)
   end
 
   return {
-    commit_summary = commit_summary_p.value,
-    commit_patch = commit_patch_p.value[1],
+    summary = commit_summary_p.value,
+    patch = commit_patch_p.value[1],
+    ref_labels = ref_labels_p.value[1],
+    msg = msg_p.value,
   }
 end
 
@@ -141,6 +159,7 @@ local function setup_window()
 end
 
 local function git_show(opts)
+  module_initialize()
   local rev_buf = u.table_clone(opts)
 
   if not rev_buf.winnr then
@@ -152,14 +171,83 @@ local function git_show(opts)
   end
 
   local rev_info = gather_info(opts.rev)
-  local patch = patch_parser.parse(rev_info.commit_patch)
+  local patch = patch_parser.parse(rev_info.patch)
 
   local outline = outliner.new({buffer = rev_buf.bufnr})
+  outline.type = "RevBuffer"
   rev_buf.outline = outline
+
+  ----------------------------------------------------------------
+  -- Commit ID
+  outline:add_node(nil, {
+      text = u.markup({{
+            group = "GitabraRevBufID",
+            text = string.format("commit %s", u.git_shorten_sha(rev_info.summary.commit_id)),
+        }}),
+        type = ou.type_section,
+        id = "RevBufID",
+    }
+  )
+
+  ----------------------------------------------------------------
+  -- Author info
+  local refs = u.markup(u.map(ou.parse_refs(rev_info.ref_labels), ou.format_ref))
+  table.insert(refs, {
+    group = "GitabraRev",
+    text = rev_info.summary.commit_id,
+  })
+  local commit_header_node = outline:add_node(nil, {
+      text = refs,
+      type = ou.type_section,
+      id = "CommitHeader",
+    }
+  )
+  outline:add_node(commit_header_node, {
+    text = u.table_copy_into({},
+      rev_info.summary.header
+    )
+  })
+
+  ----------------------------------------------------------------
+  -- Commit message
+  local msg_subject = u.table_first(rev_info.msg)
+  local msg_body = u.table_rest(rev_info.msg)
+
+  if msg_subject then
+    local msg_node = outline:add_node(nil, {
+      text = msg_subject,
+      type = "CommitMessage",
+      padlines_before = 1,
+    })
+
+    if not u.table_is_empty(msg_body) then
+      outline:add_node(msg_node, {
+        text = msg_body
+      })
+    end
+  end
+
+  ----------------------------------------------------------------
+  -- Commit stats
+  local stat_node = outline:add_node(nil, {
+    text = rev_info.summary.stat_summary,
+    type = "CommitStat",
+    padlines_before = 1,
+  })
+
+  if not u.table_is_empty(rev_info.summary.stat_details) then
+    outline:add_node(stat_node, {
+      text = rev_info.summary.stat_details,
+    })
+  end
+
+  ----------------------------------------------------------------
+  -- Commit diff
 
   if not u.table_is_empty(patch.patch_info) then
     for _, entry in pairs(patch.patch_info) do
       local file_node = outline:add_node(nil, ou.make_file_node(entry.b_file))
+      file_node.padlines_before = 1
       ou.populate_hunks(outline, file_node, patch, entry)
     end
   end
@@ -175,4 +263,5 @@ return {
   git_show = git_show,
   toggle_fold_at_current_line = toggle_fold_at_current_line,
   restore_old_buffer = restore_old_buffer,
+  task_git_commit_summary = task_git_commit_summary,
 }

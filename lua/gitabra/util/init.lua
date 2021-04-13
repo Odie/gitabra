@@ -503,6 +503,10 @@ local function zipper_picks_by_type(z_in)
   return picks
 end
 
+local function git_shorten_sha(sha)
+  return string.sub(sha, 1, 7)
+end
+
 return ut.table_copy_into({
     lines = lines,
     lines_array = lines_array,
@@ -544,6 +548,7 @@ return ut.table_copy_into({
     hl_group_attrs_to_str = hl_group_attrs_to_str,
     nvim_line_zero_idx = nvim_line_zero_idx,
     zipper_picks_by_type = zipper_picks_by_type,
+    git_shorten_sha = git_shorten_sha,
   },
   ut,
   require('gitabra.util.functional'),

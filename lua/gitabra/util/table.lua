@@ -243,6 +243,10 @@ end
 local function table_slice(t, first, last)
   local count = #t
 
+  if first > count then
+    return {}
+  end
+
   first = interpret_idx(first, count)
   if last == nil then
     last = count
@@ -254,7 +258,6 @@ local function table_slice(t, first, last)
     return {}
   end
 
-  -- return first, last
   local result = {}
   local i = first
 

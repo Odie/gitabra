@@ -89,6 +89,51 @@ local function outline_toggle_fold_at_current_line(outline)
   vim.cmd(tostring(node.lineno+1))
 end
 
+
+-- Parse reference names, such as "origin/master"
+local function parse_ref(ref_str)
+  ref_str = u.trim(ref_str)
+  local result =  {}
+
+  local name = string.match(ref_str, "^HEAD %-> refs/heads/(.*)$") or
+               string.match(ref_str, "^HEAD %-> (.*)$")
+
+  if name then
+    result.name = name
+    result.current_branch = true
+    return result
+  end
+
+  local remote
+  remote, name = string.match(ref_str, "^(.-)/(.*)$")
+  if remote and name then
+    result.name = name
+    result.remote = remote
+    return result
+  end
+
+  result.name = ref_str
+  return result
+end
+
+local function parse_refs(refs_str)
+  return u.map(u.string_split_by_pattern(refs_str, ","), parse_ref)
+end
+
+-- Format data returned from `parse_ref` into format that's usable by an outline
+local function format_ref(ref)
+  local result = u.markup({ text = ref.name })
+  if ref.current_branch then
+    result.group = "GitabraCurrentBranch"
+  elseif ref.remote then
+    result.group = "GitabraRemoteRef"
+    result.text = string.format("%s/%s", ref.remote, ref.name)
+  else
+    result.group = "GitabraBranch"
+  end
+  return result
+end
+
 return {
   type_section = type_section,
   type_file = type_file,
@@ -101,4 +146,8 @@ return {
   populate_hunks_by_filepath = populate_hunks_by_filepath,
   populate_hunks = populate_hunks,
   outline_toggle_fold_at_current_line = outline_toggle_fold_at_current_line,
+
+  parse_refs = parse_refs,
+  parse_ref = parse_ref,
+  format_ref = format_ref,
 }
