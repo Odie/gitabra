@@ -25,6 +25,12 @@ local function get_current_rev_buf()
   return active_rev_bufs[vim.b.rev_buf_id]
 end
 
+local function remove_rev_buf_by_bufnr(bufnr)
+  bufnr = tonumber(bufnr)
+  local id = vim.api.nvim_buf_get_var(bufnr, "rev_buf_id")
+  active_rev_bufs[id] = nil
+end
+
 
 local module_initialized = false
 local function module_initialize()
@@ -104,7 +110,7 @@ local function toggle_fold_at_current_line()
   end
 end
 
-local function close_rev_buf()
+local function close_rev_buf(skip_buf_delete)
   local rev_buf = get_current_rev_buf()
   if rev_buf then
     active_rev_bufs[rev_buf.id] = nil
@@ -116,7 +122,9 @@ local function close_rev_buf()
       api.nvim_set_current_buf(rev_buf.old_bufnr)
     end
 
-    api.nvim_buf_delete(rev_buf.bufnr, {})
+    if not skip_buf_delete then
+      api.nvim_buf_delete(rev_buf.bufnr, {})
+    end
   end
 end
 
@@ -167,7 +175,9 @@ local function setup_window()
 end
 
 local function rev_buf_activate(rev_buf)
-  api.nvim_set_current_win(rev_buf.winnr)
+  if api.nvim_win_is_valid(rev_buf.winnr) then
+    api.nvim_set_current_win(rev_buf.winnr)
+  end
   rev_buf.old_bufnr = api.nvim_get_current_buf()
   api.nvim_set_current_buf(rev_buf.bufnr)
   rev_buf.outline:refresh()
@@ -282,7 +292,20 @@ local function git_show_inner(opts)
   active_rev_bufs[rev_buf.id] = rev_buf
   api.nvim_buf_set_name(rev_buf.bufnr, rev_buf.id)
   rev_buf_activate(rev_buf)
+
+  -- The vim buffer is now "current".
+  -- Attach the buffer id
   vim.b.rev_buf_id = rev_buf.id
+
+  -- Attach autocmd to cleanup this rev_buf when it is closed
+  -- While we do provide a command to close the rev buffer, the user may also try to close
+  -- the buffer with other vim commands.
+  u.nvim_commands([[
+    augroup CleanupRevBuffer
+      autocmd! * <buffer>
+      autocmd BufUnload <buffer> lua require('gitabra.git_show').remove_rev_buf_by_bufnr(vim.fn.expand("<abuf>"))
+    augroup END
+    ]], true)
 end
 
 local function git_show(opts)
@@ -296,4 +319,6 @@ return {
   git_show = git_show,
   toggle_fold_at_current_line = toggle_fold_at_current_line,
   close_rev_buf = close_rev_buf,
+  active_rev_bufs = active_rev_bufs,
+  remove_rev_buf_by_bufnr = remove_rev_buf_by_bufnr,
 }
