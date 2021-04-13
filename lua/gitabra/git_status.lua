@@ -458,15 +458,31 @@ local function any_win_except(win_avoid)
       break
     end
   end
-  -- print("avoiding win:", win_avoid)
-  -- print("selected win:", target_win)
   return target_win
+end
+
+local function activate_any_win_except(win_avoid)
+  local w = any_win_except(win_avoid)
+  if w and api.nvim_win_is_valid(w) then
+    api.nvim_set_current_win(w)
+    return w
+  end
+end
+
+local function activate_any_win_or_new(win_avoid, new_cmd)
+  local w = activate_any_win_except(win_avoid)
+  if not w then
+    new_cmd = new_cmd or ":botright vsplit"
+    w = vim.cmd(new_cmd)
+    api.nvim_set_current_win(w)
+  end
 end
 
 -- Jumps to the file and line of the hunk line under the cursor
 local function jump_to_location()
   local lineno = vim.fn.line(".") - 1
-  local outline = get_sole_status_screen().outline
+  local sc = get_sole_status_screen()
+  local outline = sc.outline
   if not outline then
     return
   end
@@ -487,14 +503,16 @@ local function jump_to_location()
       line_type = "common"
     end
     local count = hunk_lines_count_type(hc[ou.type_hunk_content].text, line_type, rellineno)
+    activate_any_win_or_new(sc.winnr)
     vim.cmd(string.format("e +%i %s", hunk_start+count-1, hc_target_full_filepath(hc)))
   elseif hc[ou.type_hunk_header] then
     local hunk_start = patch_parser.parse_hunk_header(hc[ou.type_hunk_header].text[1])[2].start
+    activate_any_win_or_new(sc.winnr)
     vim.cmd(string.format("e +%i %s", hunk_start, hc_target_full_filepath(hc)))
   elseif hc[ou.type_file] then
+    activate_any_win_or_new(sc.winnr)
     vim.cmd(string.format("e %s", hc_target_full_filepath(hc)))
   elseif hc[ou.type_recent_commit] then
-    local sc = get_sole_status_screen()
     local target_win = any_win_except(sc.winnr)
 
     require("gitabra.git_show").git_show({
