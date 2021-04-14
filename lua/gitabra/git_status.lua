@@ -82,6 +82,8 @@ local function module_initialize()
     return
   end
 
+  vim.cmd("highlight link GitabraStatusNumber Debug")
+
   vim.cmd("highlight link GitabraBranch Blue")
 
   local attrs = u.hl_group_attrs("Yellow")
@@ -630,10 +632,10 @@ local function gitabra_status()
   if #st_info.untracked ~= 0 then
     local section = outline:add_node(nil, {
         text = u.markup({{
-            group = "GitabraStatusSection",
-            text = "Untracked"
-        }}),
-        type = type_section,
+          group = "GitabraStatusSection",
+          text = "Untracked"
+        }, {group = "GitabraStatusNumber",
+            text = " (" .. #st_info.untracked .. ")"}}),
         id = "untracked",
         padlines_before = 1,
     })
@@ -645,9 +647,10 @@ local function gitabra_status()
   if #st_info.unstaged ~= 0 then
     local section = outline:add_node(nil, {
         text = u.markup({{
-            group = "GitabraStatusSection",
-            text = "Unstaged"
-        }}),
+          group = "GitabraStatusSection",
+          text = "Unstaged"
+        }, {group = "GitabraStatusNumber",
+            text = " (" .. #st_info.unstaged .. ")"}}),
         type = type_section,
         id = "unstaged",
         padlines_before = 1,
@@ -664,7 +667,8 @@ local function gitabra_status()
         text = u.markup({{
           group = "GitabraStatusSection",
           text = "Staged"
-        }}),
+        }, {group = "GitabraStatusNumber",
+            text = " (" .. #st_info.staged .. ")"}}),
         type = type_section,
         id = "staged",
         padlines_before = 1,
