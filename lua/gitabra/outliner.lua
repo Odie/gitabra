@@ -20,11 +20,9 @@ local function module_initialize()
     return
   end
 
-  -- ">": Unicode: U+003E, UTF-8: 3E
-  vim.fn.sign_define(collapsed_sign_name, {text = ">"})
+  vim.fn.sign_define(collapsed_sign_name, {text = vim.g.gitabra_outline_collapsed_text})
 
-  -- "⋁": Unicode U+22C1, UTF-8: E2 8B 81
-  vim.fn.sign_define(expanded_sign_name, {text = "⋁"})
+  vim.fn.sign_define(expanded_sign_name, {text = vim.g.gitabra_outline_expanded_text})
   M.module_initialized = true
 end
 
