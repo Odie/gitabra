@@ -262,7 +262,7 @@ local function patch_infos()
 end
 
 local function setup_window()
-  vim.cmd(":topleft vsplit")
+  vim.cmd(":" .. vim.g.gitabra_status_window_pos)
   local win = api.nvim_get_current_win()
   vim.wo[win].number = false
   vim.wo[win].relativenumber = false
