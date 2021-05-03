@@ -200,9 +200,51 @@ local function patch_info(patch_text)
   return result
 end
 
+local extended_headers_patterns = {
+  old_mode = "old mode (.-)\n",
+  new_mode = "new mode (.-)\n",
+  deleted_file_mode = "deleted file mode (.-)\n",
+  new_file_mode = "new file mode (.-)\n",
+  copy_from = "copy from (.-)\n",
+  copy_to = "copy to (.-)\n",
+  rename_from = "rename from (.-)\n",
+  rename_to = "rename to (.-)\n",
+  similarity_index = "similarity index (.-)\n",
+  dissimilarity_index = "dissimilarity index (.-)\n",
+}
+
+local function parse_extended_headers(ext_headers_text)
+  local result = {}
+  for name, pattern in pairs(extended_headers_patterns) do
+    local capture = string.match(ext_headers_text, pattern)
+    if capture then
+      result[name] = capture
+    end
+  end
+
+  local old_rev, new_rev, mode = string.match(ext_headers_text, "index (.-)%.%.(.-) (.-)\n")
+  if old_rev and new_rev and mode then
+    result.index = {
+      old_rev = old_rev,
+      new_rev = new_rev,
+      mode = mode
+    }
+  end
+
+  return result
+end
+
 local function parse(patch_text)
+  local info = patch_info(patch_text)
+
+  for _, diff in ipairs(info) do
+    local ext_headers_text = string.sub(patch_text, diff.content_start, diff.hunks[1].header_start-1)
+    local ext_headers = parse_extended_headers(ext_headers_text)
+    diff.ext_headers = ext_headers
+  end
+
   return {
-    patch_info = patch_info(patch_text),
+    patch_info = info,
     patch_text = patch_text,
   }
 end
@@ -234,5 +276,6 @@ return {
   parse_hunk_header = parse_hunk_header,
   make_hunk_header = make_hunk_header,
   file_diff_get_header_contents = file_diff_get_header_contents,
+  parse_extended_headers = parse_extended_headers,
   parse = parse,
 }

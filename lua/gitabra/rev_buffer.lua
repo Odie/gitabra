@@ -110,6 +110,32 @@ local function toggle_fold_at_current_line()
   end
 end
 
+local function jump_to_location()
+  local rev_buf = get_current_rev_buf()
+  if not rev_buf then
+    return
+  end
+
+  local z = ou.outline_zipper_at_current_line(rev_buf.outline)
+  local picks = u.zipper_picks_by_type(z)
+
+  local file_buf = require("gitabra.rev_file_buffer")
+  if picks[ou.type_hunk_content] then
+    print("jump content")
+  elseif picks[ou.type_hunk_header] then
+    print("jump header")
+  elseif picks[ou.type_file] then
+    print("jump file")
+    file_buf.show({
+      git_root = rev_buf.git_root,
+      commit_rev = rev_buf.rev,
+      rev = picks[ou.type_file].new_rev,
+      filename = picks[ou.type_file].filename,
+    })
+  end
+
+end
+
 local function close_rev_buf(skip_buf_delete)
   local rev_buf = get_current_rev_buf()
   if rev_buf then
@@ -278,10 +304,11 @@ local function show_inner(opts)
 
   ----------------------------------------------------------------
   -- Commit diff
-
   if not u.table_is_empty(patch.patch_info) then
     for _, entry in pairs(patch.patch_info) do
       local file_node = outline:add_node(nil, ou.make_file_node(entry.b_file))
+      file_node.old_rev = entry.ext_headers.index.old_rev
+      file_node.new_rev = entry.ext_headers.index.new_rev
       file_node.padlines_before = 1
       ou.populate_hunks(outline, file_node, patch, entry)
     end
@@ -318,6 +345,7 @@ end
 return {
   show = show,
   toggle_fold_at_current_line = toggle_fold_at_current_line,
+  jump_to_location = jump_to_location,
   close_rev_buf = close_rev_buf,
   active_rev_bufs = active_rev_bufs,
   remove_rev_buf_by_bufnr = remove_rev_buf_by_bufnr,

@@ -141,6 +141,10 @@ local function format_ref(ref)
   return result
 end
 
+local function outline_zipper_at_current_line(outline)
+  return outline:node_zipper_at_lineno(u.nvim_line_zero_idx("."))
+end
+
 return {
   type_section = type_section,
   type_file = type_file,
@@ -153,6 +157,7 @@ return {
   populate_hunks_by_filepath = populate_hunks_by_filepath,
   populate_hunks = populate_hunks,
   outline_toggle_fold_at_current_line = outline_toggle_fold_at_current_line,
+  outline_zipper_at_current_line = outline_zipper_at_current_line,
 
   parse_refs = parse_refs,
   parse_ref = parse_ref,
