@@ -564,6 +564,10 @@ local function array_remove_trailing_empty_lines(strs)
   end
 end
 
+local function nvim_center_current_line()
+  vim.cmd("normal! zz")
+end
+
 return ut.table_copy_into({
     lines = lines,
     lines_array = lines_array,
@@ -610,6 +614,7 @@ return ut.table_copy_into({
     wrap__call_or_print_stacktrace = wrap__call_or_print_stacktrace,
     filter_empty_strings = filter_empty_strings,
     array_remove_trailing_empty_lines = array_remove_trailing_empty_lines,
+    nvim_center_current_line = nvim_center_current_line,
   },
   ut,
   require('gitabra.util.functional'),

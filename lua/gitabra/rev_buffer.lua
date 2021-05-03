@@ -31,7 +31,6 @@ local function remove_rev_buf_by_bufnr(bufnr)
   active_rev_bufs[id] = nil
 end
 
-
 local module_initialized = false
 local function module_initialize()
   if module_initialized then
@@ -116,16 +115,44 @@ local function jump_to_location()
     return
   end
 
+  local lineno = vim.fn.line(".") - 1
   local z = ou.outline_zipper_at_current_line(rev_buf.outline)
   local picks = u.zipper_picks_by_type(z)
 
   local file_buf = require("gitabra.rev_file_buffer")
   if picks[ou.type_hunk_content] then
-    print("jump content")
+    local rellineno = lineno - picks[ou.type_hunk_content].lineno + 1
+    local line_type = ou.hunk_line_type(picks[ou.type_hunk_content].text[rellineno])
+    local opts = {
+      git_root = rev_buf.git_root,
+      commit_rev = u.git_shorten_sha(rev_buf.rev),
+      filename = picks[ou.type_file].filename,
+    }
+    if line_type == "-" then
+      opts.rev = picks[ou.type_file].old_rev
+      opts.commit_rev = opts.commit_rev.."^"
+    else
+      opts.rev = picks[ou.type_file].new_rev
+    end
+    file_buf.show(opts)
+
+    local hunk_start = patch_parser.parse_hunk_header(picks[ou.type_hunk_header].text[1])[2].start
+    local count = ou.hunk_lines_count_type(picks[ou.type_hunk_content].text, line_type, rellineno)
+    vim.cmd(tostring(hunk_start+count-1))
+    u.nvim_center_current_line()
+
   elseif picks[ou.type_hunk_header] then
-    print("jump header")
+    file_buf.show({
+      git_root = rev_buf.git_root,
+      commit_rev = rev_buf.rev,
+      rev = picks[ou.type_file].new_rev,
+      filename = picks[ou.type_file].filename,
+    })
+
+    local hunk_start = patch_parser.parse_hunk_header(picks[ou.type_hunk_header].text[1])[2].start
+    vim.cmd(tostring(hunk_start))
+    u.nvim_center_current_line()
   elseif picks[ou.type_file] then
-    print("jump file")
     file_buf.show({
       git_root = rev_buf.git_root,
       commit_rev = rev_buf.rev,

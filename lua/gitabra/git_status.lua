@@ -373,42 +373,6 @@ local function toggle_fold_at_current_line()
   ou.outline_toggle_fold_at_current_line(get_sole_status_screen().outline)
 end
 
--- Return the type of hunk line we are looking at.
--- Returns either "+", "-", or "common"
-local function hunk_line_type(line)
-  local char = line:sub(1,1)
-  if char == "+" then
-    return "+"
-  elseif char == "-" then
-    return "-"
-  else
-    return "common"
-  end
-end
-
--- Given some hunk lines, count (up to line_limit) the number of
--- lines relavant to a specific type
-local function hunk_lines_count_type(lines, line_type, line_limit)
-  local count = 0
-  if not line_limit then
-    line_limit = #lines
-  else
-    line_limit = u.math_clamp(line_limit, 1, #lines)
-  end
-
-  for i=1, line_limit do
-    local line = lines[i]
-    local t = hunk_line_type(line)
-    if (line_type == "+" or line_type == "common") and (t == "+" or t == "common") then
-      count = count + 1
-    elseif line_type == "-" and (t == "-" or t == "common") then
-      count = count + 1
-    end
-  end
-
-  return count
-end
-
 -- Assuming we have a zipper that's targetting a hunk,
 -- build a description to make it easier ask useful question with
 local function hunk_context(z)
@@ -498,11 +462,11 @@ local function jump_to_location()
   if hc[ou.type_hunk_content] then
     local hunk_start = patch_parser.parse_hunk_header(hc[ou.type_hunk_header].text[1])[2].start
     local rellineno = lineno - hc[ou.type_hunk_content].lineno + 1
-    local line_type = hunk_line_type(hc[ou.type_hunk_content].text[rellineno])
+    local line_type = ou.hunk_line_type(hc[ou.type_hunk_content].text[rellineno])
     if line_type == "-" then
       line_type = "common"
     end
-    local count = hunk_lines_count_type(hc[ou.type_hunk_content].text, line_type, rellineno)
+    local count = ou.hunk_lines_count_type(hc[ou.type_hunk_content].text, line_type, rellineno)
     activate_any_win_or_new(sc.winnr)
     vim.cmd(string.format("e +%i %s", hunk_start+count-1, hc_target_full_filepath(hc)))
   elseif hc[ou.type_hunk_header] then

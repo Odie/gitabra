@@ -145,6 +145,42 @@ local function outline_zipper_at_current_line(outline)
   return outline:node_zipper_at_lineno(u.nvim_line_zero_idx("."))
 end
 
+-- Return the type of hunk line we are looking at.
+-- Returns either "+", "-", or "common"
+local function hunk_line_type(line)
+  local char = line:sub(1,1)
+  if char == "+" then
+    return "+"
+  elseif char == "-" then
+    return "-"
+  else
+    return "common"
+  end
+end
+
+-- Given some hunk lines, count (up to line_limit) the number of
+-- lines relavant to a specific type
+local function hunk_lines_count_type(lines, line_type, line_limit)
+  local count = 0
+  if not line_limit then
+    line_limit = #lines
+  else
+    line_limit = u.math_clamp(line_limit, 1, #lines)
+  end
+
+  for i=1, line_limit do
+    local line = lines[i]
+    local t = hunk_line_type(line)
+    if (line_type == "+" or line_type == "common") and (t == "+" or t == "common") then
+      count = count + 1
+    elseif line_type == "-" and (t == "-" or t == "common") then
+      count = count + 1
+    end
+  end
+
+  return count
+end
+
 return {
   type_section = type_section,
   type_file = type_file,
@@ -162,4 +198,7 @@ return {
   parse_refs = parse_refs,
   parse_ref = parse_ref,
   format_ref = format_ref,
+
+  hunk_line_type = hunk_line_type,
+  hunk_lines_count_type = hunk_lines_count_type,
 }

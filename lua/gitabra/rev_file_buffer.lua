@@ -54,7 +54,7 @@ local function show(opts)
   local existing_buf = active_bufs[id]
   if existing_buf then
     api.nvim_set_current_buf(existing_buf.bufnr)
-    return
+    return existing_buf
   end
 
   -- Get the contents of the file
@@ -86,7 +86,7 @@ local function show(opts)
   -- 3) Assign some arbitrary filename after filetype detection is completed
   api.nvim_buf_set_name(buf.bufnr, "gitabra_temp://"..buf.filename)
   vim.cmd("filetype detect")
-  api.nvim_buf_set_name(buf.bufnr, string.format("%s.~%s~", buf.filename, u.git_shorten_sha(buf.commit_rev)))
+  api.nvim_buf_set_name(buf.bufnr, string.format("%s.~%s~", buf.filename, buf.commit_rev))
 
   u.nvim_commands([[
     augroup CleanupRevFileBuffer
@@ -94,6 +94,8 @@ local function show(opts)
       autocmd BufUnload <buffer> lua require('gitabra.rev_file_buffer').remove_rev_file_buf_by_bufnr(vim.fn.expand("<abuf>"))
     augroup END
     ]], true)
+
+  return buf
 end
 
 return {
