@@ -1,6 +1,6 @@
 -- Hierarchical zipper
 -- Mostly mirrors the clojure.zip api
-local u = require("gitabra.util")
+local ut = require("gitabra.util.table")
 
 local M = {}
 M.__index = M
@@ -29,8 +29,8 @@ end
 function M:clone()
   local o = {
     children_fn = self.children_fn,
-    path = u.table_clone(self.path),
-    path_idxs = u.table_clone(self.path_idxs),
+    path = ut.table_clone(self.path),
+    path_idxs = ut.table_clone(self.path_idxs),
     root = root,
   }
   setmetatable(o, M)
@@ -48,11 +48,11 @@ function M:set_path(path_to_node)
   local path_idxs = {0}
 
   for _, target_idx in ipairs(path_to_node) do
-    local curnode = u.table_get_last(path)
+    local curnode = ut.table_get_last(path)
     local children = get_children(self, curnode)
     local target_node = children[target_idx]
-    u.table_push(path, target_node)
-    u.table_push(path_idxs, target_idx)
+    ut.table_push(path, target_node)
+    ut.table_push(path_idxs, target_idx)
   end
 
   self.path = path
@@ -75,8 +75,8 @@ function M:down()
   local cs = self:children()
 
   if cs and #cs >= 1 then
-    u.table_push(self.path, cs[1])
-    u.table_push(self.path_idxs, 1)
+    ut.table_push(self.path, cs[1])
+    ut.table_push(self.path_idxs, 1)
     return true
   end
   return false
@@ -92,8 +92,8 @@ function M:to_child_node(child_node)
   end
   for i, c in ipairs(cs) do
     if c == child_node then
-      u.table_push(self.path, c)
-      u.table_push(self.path_idxs, i)
+      ut.table_push(self.path, c)
+      ut.table_push(self.path_idxs, i)
       return true
     end
   end
@@ -109,15 +109,15 @@ function M:right()
   end
   local parent = self.path[#self.path-1]
 
-  local cur_idx = u.table_get_last(self.path_idxs)
+  local cur_idx = ut.table_get_last(self.path_idxs)
   local target_sibling = cur_idx + 1
 
   local siblings = get_children(self, parent)
   if #siblings >= target_sibling then
-    u.table_pop(self.path)
-    u.table_push(self.path, siblings[target_sibling])
-    u.table_pop(self.path_idxs)
-    u.table_push(self.path_idxs, target_sibling)
+    ut.table_pop(self.path)
+    ut.table_push(self.path, siblings[target_sibling])
+    ut.table_pop(self.path_idxs)
+    ut.table_push(self.path_idxs, target_sibling)
     return true
   end
 
@@ -130,7 +130,7 @@ function M:left()
     return false
   end
 
-  local cur_idx = u.table_get_last(self.path_idxs)
+  local cur_idx = ut.table_get_last(self.path_idxs)
   local target_sibling = cur_idx - 1
   if target_sibling < 1 then
     return false
@@ -139,10 +139,10 @@ function M:left()
   local parent = self.path[#self.path-1]
   local siblings = get_children(self, parent)
 
-  u.table_pop(self.path)
-  u.table_push(self.path, siblings[target_sibling])
-  u.table_pop(self.path_idxs)
-  u.table_push(self.path_idxs, target_sibling)
+  ut.table_pop(self.path)
+  ut.table_push(self.path, siblings[target_sibling])
+  ut.table_pop(self.path_idxs)
+  ut.table_push(self.path_idxs, target_sibling)
   return true
 end
 
@@ -166,7 +166,7 @@ end
 
 -- Get the current node
 function M:node()
-  return u.table_get_last(self.path)
+  return ut.table_get_last(self.path)
 end
 
 function M:parent_node()
@@ -190,8 +190,8 @@ end
 -- Removes the end marker in the path if found
 function M:remove_end_marker()
   if self:at_end() then
-    u.table_pop(self.path)
-    u.table_pop(self.path_idxs)
+    ut.table_pop(self.path)
+    ut.table_pop(self.path_idxs)
   end
 end
 
@@ -236,8 +236,8 @@ function M:next_up_right()
   -- Or, we end up at the root with an "end" marker in the path
   while true do
     if not self:up() then
-      u.table_push(self.path, "end")
-      u.table_push(self.path_idxs, -1)
+      ut.table_push(self.path, "end")
+      ut.table_push(self.path_idxs, -1)
       return false
     end
 

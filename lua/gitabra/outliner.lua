@@ -45,6 +45,12 @@ local function print_cs(cs)
   end
 end
 
+local function debug_print(cond, ...)
+  if cond then
+    print(...)
+  end
+end
+
 -- Given some `target_node` and its `parent_node`, determine
 -- which line the target_node's text should start on
 local function determine_node_lineno(self, parent_node, target_node)
@@ -67,9 +73,12 @@ local function determine_node_lineno(self, parent_node, target_node)
   -- This will visit all sibling nodes and their descendents.
   -- It might be better if we implemented `prev` in the zipper.
   local z = zipper.new(parent_node, "children")
+  local enable_print = false
+  -- debug_print(enable_print, ">>>>> Laying out:", vim.inspect(z.path_idxs))
+  -- debug_print(enable_print, "layout target:", vim.inspect(target_node))
+
   while not z:at_end() do
     local node = z:node()
-    -- print("@", vim.inspect(node))
 
     -- The document tree is already fully formed...
     -- We want to figure out where content that comes before
@@ -79,32 +88,50 @@ local function determine_node_lineno(self, parent_node, target_node)
       break
     end
 
+    -- debug_print(enable_print, "-----------------------------------------------------------")
+    -- debug_print(enable_print, "@", vim.inspect(z.path_idxs))
+    -- debug_print(enable_print, "@", vim.inspect(node))
+
     if node.linemark ~= nil then
       -- print("located a node with linemark")
       local position = api.nvim_buf_get_extmark_by_id(self.buffer, linemark_ns, node.linemark, {})
 
       if position[1] then
+        -- if position[1] ~= node.lineno then
+        --   debug_print(enable_print, "^^^^^^^^^^^^^^^^^^^^^^^^^^^^ linemark position and recorded lineno does not match!")
+        -- end
         last_row = math.max(last_row, position[1])
         matched_node = node
-        -- print("position for node is:", vim.inspect(position))
-        -- print("new last row:", last_row)
+        debug_print(enable_print, "position for node is:", vim.inspect(position))
+        debug_print(enable_print, "** new last row:", last_row)
       else
-        -- print("linemark is invalid")
+        debug_print(enable_print, "linemark is invalid")
       end
     end
 
+    -- if node.lineno ~= nil then
+    --   -- print("located a node with linemark")
+    --   last_row = math.max(last_row, node.lineno)
+    --   matched_node = node
+    --   debug_print(enable_print, "position for node is:", vim.inspect(node.lineno))
+    --   debug_print(enable_print, "** new last row:", last_row)
+    -- end
     z:next()
   end
 
   if not matched_node then
-    -- print("no matched node, returning 0")
+    -- debug_print(enable_print, "no matched node, returning 0")
     return 0
   end
 
-  local result = last_row + #matched_node.text
+  -- local result = last_row + #matched_node.text
+  local result = matched_node.lineno + #matched_node.text
+  -- debug_print(enable_print, "result:", result, "last_row:", last_row, "#matched_node.text:", #matched_node.text)
   if target_node.padlines_before then
     result = result + target_node.padlines_before
   end
+  -- debug_print(enable_print, "result:", result)
+  -- debug_print(enable_print, "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee")
   return result
 end
 

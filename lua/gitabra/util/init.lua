@@ -1,8 +1,14 @@
 local job = require('gitabra.job')
 local api = vim.api
 local ut = require('gitabra.util.table')
+local a = require('gitabra.async')
+local promise = require('gitabra.promise')
+local uf = require('gitabra.util.functional')
+local splitter = require('gitabra.util.string_splitter')
 
 -- Returns an iterator over each line in `str`
+-- Note that this will eat empty lines
+-- TODO: Modify this to process empty lines correctly
 local function lines(str)
   return str:gmatch("[^\r\n]+")
 end
@@ -19,9 +25,48 @@ local function interp(s, params)
   return (s:gsub('($%b{})', function(w) return params[w:sub(3, -2)] or w end))
 end
 
+local function string_split_by_pattern(str, pattern)
+  local tokens = {}
+  local last_e = 0
+  local s = 0
+  local e = 0
+  while true do
+    s, e = string.find(str, pattern, e+1)
+
+    -- No more matches...
+    -- Put all contents from the end of the last match up to end of string into tokens
+    if s == nil then
+      if last_e ~= string.len(str) then
+        table.insert(tokens, string.sub(str, last_e+1, string.len(str)))
+      end
+      break
+
+    -- If the next match came immediately after the last_e,
+    -- we've encountered a case where two deliminator patterns were placed side-by-side.
+    -- Place an empty string in the tokens array to indicate an empty field was found
+    elseif last_e+1 == s then
+      table.insert(tokens, "")
+
+    -- Otherwise, extract all string contents starting from the last_e up to where this
+    -- match was found
+    else
+      table.insert(tokens, string.sub(str, last_e+1, s-1))
+    end
+    last_e = e
+  end
+
+  return tokens
+end
+
 local function nanotime()
   return vim.loop.hrtime() / 1000000000
 end
+
+-------------------------------------------------------------------------------
+-- Running programs in a separate process
+--
+-- This works a bit like neovim's job controls system, but built
+-- directly over vim.loop in lua.
 
 -- Execute the given command asynchronously
 -- Returns a `results` table.
@@ -29,13 +74,18 @@ end
 -- `output` table stores the output of the executed command
 -- `job` field contains a `gitabra.job` object used to run the command
 --
-local function system_async(cmd, opt)
+local function system(cmd, opt, callback)
   local result = {
     output = {},
     err_output = {},
     done = false
   }
   opt = opt or {}
+  if opt.split_lines then
+    result.stdout_splitter = splitter.new("\n")
+    result.stderr_splitter = splitter.new("\n")
+  end
+
 
   local j = job.new({
       cmd = cmd,
@@ -46,8 +96,10 @@ local function system_async(cmd, opt)
         end
         if data then
           if opt.split_lines then
-            for line in lines(data) do
-              table.insert(result.output, line)
+            result.stdout_splitter:add(data)
+            if not ut.table_is_empty(result.stdout_splitter.result) then
+              ut.table_concat(result.output, result.stdout_splitter.result)
+              result.stdout_splitter.result = {}
             end
           else
             table.insert(result.output, data)
@@ -60,8 +112,10 @@ local function system_async(cmd, opt)
         end
         if data then
           if opt.split_lines then
-            for line in lines(data) do
-              table.insert(result.err_output, line)
+            result.stdout_splitter:add(data)
+            if not ut.table_is_empty(result.stdout_splitter.result) then
+              ut.table_concat(result.output, result.stdout_splitter.result)
+              result.stdout_splitter.result = {}
             end
           else
             table.insert(result.err_output, data)
@@ -69,13 +123,22 @@ local function system_async(cmd, opt)
         end
       end,
       on_exit = function(_, code, _)
-        if opt.merge_output and #result.output > 1 then
+        if opt.split_lines then
+          result.stdout_splitter:stop()
+          ut.table_concat(result.output, result.stdout_splitter.result)
+
+          result.stderr_splitter:stop()
+          ut.table_concat(result.err_output, result.stderr_splitter.result)
+        elseif opt.merge_output and #result.output > 1 then
           result.output = { table.concat(result.output) }
         end
         result.exit_code = code
         result.done = true
         result.stop_time = nanotime()
         result.elapsed_time = result.stop_time - result.start_time
+        if callback then
+          callback(result)
+        end
       end
     })
 
@@ -84,6 +147,53 @@ local function system_async(cmd, opt)
 
   result.job = j
   return result
+end
+
+-- A version of `system` meant to work with async mechanims of `gitabra.async`
+local system_async = a.wrap(system)
+
+-- Returns the `system` call as a promise.
+local function system_as_promise(cmd, opt, p)
+  p = p or promise.new({})
+  p.job = system(cmd, opt, function(j) p:deliver(j.output) end)
+  return p
+end
+
+local function system_job_is_done(j)
+  return j.done
+end
+
+local function system_jobs_are_done(jobs)
+  -- If any of the jobs are not done yet,
+  -- we're not done
+  for _, j in pairs(jobs) do
+    if j.done == false then
+      return false
+    end
+  end
+
+  -- All of the jobs are done...
+  return true
+end
+
+-- Wait until either `ms` has elapsed or when `predicate` returns true
+local function system_job_wait_for(j, ms, predicate)
+  return vim.wait(ms, predicate, 5)
+end
+
+local function system_job_wait(j, ms)
+  return vim.wait(ms,
+    function()
+      return j.done
+    end, 5)
+end
+
+-- Wait up to `ms` approximately milliseconds until all the jobs are done
+function system_job_wait_all(jobs, ms)
+  return vim.wait(ms,
+    function()
+      return M.are_jobs_done(jobs)
+    end, 5)
 end
 
 
@@ -245,14 +355,14 @@ local function within_region(region, lineno)
   end
 end
 
-local function git_root_dir_j()
-  return system_async("git rev-parse --show-toplevel", {split_lines=true})
+local function git_root_dir_p()
+  return system_as_promise("git rev-parse --show-toplevel", {split_lines=true})
 end
 
 local function git_root_dir()
-  local j = git_root_dir_j()
-  job.wait(j, 500)
-  return j.output[1]
+  local p = git_root_dir_p()
+  p:wait(500)
+  return p.job.output[1]
 end
 
 local function git_dot_git_dir()
@@ -360,36 +470,6 @@ local function nvim_synIDattr(synID, what, mode)
   end
 end
 
-local function string_split_by_pattern(str, pattern)
-  local tokens = {}
-  local last_e = 0
-  local s = 0
-  local e = 0
-  while true do
-    s, e = string.find(str, pattern, e+1)
-
-    -- No more matches...
-    -- Put all contents from the end of the last match up to end of string into tokens
-    if s == nil then
-      table.insert(tokens, string.sub(str, last_e+1, string.len(str)))
-      break
-
-    -- If the next match came immediately after the last_e,
-    -- we've encountered a case where two deliminator patterns were placed side-by-side.
-    -- Place an empty string in the tokens array to indicate an empty field was found
-    elseif last_e+1 == s then
-      table.insert(tokens, "")
-
-    -- Otherwise, extract all string contents starting from the last_e up to where this
-    -- match was found
-    else
-      table.insert(tokens, string.sub(str, last_e+1, s-1))
-    end
-    last_e = e
-  end
-
-  return tokens
-end
 
 local function hl_group_attrs(group_name, target_attrs)
   local hl_group_id = api.nvim_get_hl_id_by_name(group_name)
@@ -426,12 +506,82 @@ local function nvim_line_zero_idx(place)
   return vim.fn.line(place)-1
 end
 
+local function zipper_picks_by_type(z_in)
+  local z = z_in:clone()
+  local picks = {}
+  local node = z:node()
+
+  while true do
+    if node.type then
+      picks[node.type] = node
+    end
+    if not z:up() then
+      break
+    end
+    node = z:node()
+  end
+
+  return picks
+end
+
+local function git_shorten_sha(sha)
+  return string.sub(sha, 1, 7)
+end
+
+local function call_or_print_stacktrace(func, ...)
+  local ok, res = xpcall(func, debug.traceback, ...)
+  if not ok then
+    print(res)
+    return nil
+  else
+    return res
+  end
+end
+
+local function wrap__call_or_print_stacktrace(func)
+  return function(...)
+    return call_or_print_stacktrace(func, ...)
+  end
+end
+
+local function filter_empty_strings(strs)
+  return uf.filter(strs, function(s) return not str_is_empty(s) end)
+end
+
+local function array_remove_trailing_empty_lines(strs)
+  local last
+  for cursor = #strs, 1, -1 do
+    if not str_is_empty(strs[cursor]) then
+      last = cursor
+      break
+    end
+  end
+
+  if last == nil then
+    return {}
+  else
+    return ut.table_slice(strs, 1, last)
+  end
+end
+
+local function nvim_center_current_line()
+  vim.cmd("normal! zz")
+end
 
 return ut.table_copy_into({
     lines = lines,
     lines_array = lines_array,
     interp = interp,
+
+    system = system,
     system_async = system_async,
+    system_as_promise = system_as_promise,
+    system_job_is_done = system_job_is_done,
+    system_jobs_are_done = system_jobs_are_done,
+    system_job_wait_for = system_job_wait_for,
+    system_job_wait = system_job_wait,
+    system_job_wait_all = system_job_wait_all,
+
     node_from_path = node_from_path,
     get_in = node_from_path,
     path_from_node = path_from_node,
@@ -443,7 +593,7 @@ return ut.table_copy_into({
     selected_region = selected_region,
     within_region = within_region,
     nanotime = nanotime,
-    git_root_dir_j = git_root_dir_j,
+    git_root_dir_p = git_root_dir_p,
     git_root_dir = git_root_dir,
     git_dot_git_dir = git_dot_git_dir,
     nvim_commands = nvim_commands,
@@ -458,6 +608,13 @@ return ut.table_copy_into({
     hl_group_attrs = hl_group_attrs,
     hl_group_attrs_to_str = hl_group_attrs_to_str,
     nvim_line_zero_idx = nvim_line_zero_idx,
+    zipper_picks_by_type = zipper_picks_by_type,
+    git_shorten_sha = git_shorten_sha,
+    call_or_print_stacktrace = call_or_print_stacktrace,
+    wrap__call_or_print_stacktrace = wrap__call_or_print_stacktrace,
+    filter_empty_strings = filter_empty_strings,
+    array_remove_trailing_empty_lines = array_remove_trailing_empty_lines,
+    nvim_center_current_line = nvim_center_current_line,
   },
   ut,
   require('gitabra.util.functional'),
