@@ -13,6 +13,29 @@ local function table_copy_into(target, ...)
   return target
 end
 
+local function table_copy_into_recursive_single(target, src)
+  for k, sv in pairs(src) do
+    local tv = target[k]
+
+    if type(sv) == "table" then
+      local target_table = tv or {}
+      target[k] = table_copy_into_recursive_single(target_table, sv)
+    else
+      target[k] = sv
+    end
+  end
+  return target
+end
+
+local function table_copy_into_recursive(target, ...)
+  local tables = {...}
+  for _, src in ipairs(tables) do
+    table_copy_into_recursive_single(target, src)
+  end
+  return target
+end
+
+
 local function table_concat(target, ...)
   local tables = {...}
   for _, t in ipairs(tables) do
@@ -280,6 +303,7 @@ end
 
 return {
   table_copy_into = table_copy_into,
+  table_copy_into_recursive = table_copy_into_recursive,
   table_concat = table_concat,
   table_depth_first_visit = table_depth_first_visit,
   table_lazy_get = table_lazy_get,

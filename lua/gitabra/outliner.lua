@@ -1,6 +1,7 @@
 local api = vim.api
 local u = require('gitabra.util')
 local zipper = require('gitabra.zipper')
+local conf = require('gitabra.config')
 
 local M = {}
 M.__index = M
@@ -20,11 +21,8 @@ local function module_initialize()
     return
   end
 
-  -- ">": Unicode: U+003E, UTF-8: 3E
-  vim.fn.sign_define(collapsed_sign_name, {text = ">"})
-
-  -- "⋁": Unicode U+22C1, UTF-8: E2 8B 81
-  vim.fn.sign_define(expanded_sign_name, {text = "⋁"})
+  vim.fn.sign_define(collapsed_sign_name, {text = conf.config.disclosure_sign.collapsed})
+  vim.fn.sign_define(expanded_sign_name, {text = conf.config.disclosure_sign.expanded})
   M.module_initialized = true
 end
 

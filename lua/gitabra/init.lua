@@ -1,11 +1,28 @@
 local M = {}
 
-local status, gitabra_status = pcall(require, 'gitabra.git_status')
-if status then
-  M.gitabra_status = gitabra_status.gitabra_status
-else
-  print(gitabra_status)
+local function require_or_nil(req_path)
+  local status, result = pcall(require, req_path)
+  if not status then
+    print(result)
+    return nil
+  else
+    return result
+  end
 end
+
+local function export(export_table, export_targets)
+  for _, item in ipairs(export_targets) do
+    local module = require_or_nil(item[1])
+    if module then
+      export_table[item[2]] = module[item[2]]
+    end
+  end
+end
+
+export(M, {
+  {'gitabra.git_status', 'gitabra_status'},
+  {'gitabra.config', 'setup'}
+})
 
 if vim.g.gitabra_dev == 1 then
   local plugin_name = 'gitabra'
