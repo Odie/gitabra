@@ -27,12 +27,45 @@ written to, or when the window is closed. Feel free to use ":w", ":wq", ":q",
 or your favorite vim command.
 
 ## Installation
-Using [vim-plug](https://github.com/junegunn/vim-plug)
+[vim-plug](https://github.com/junegunn/vim-plug)
 ```
 Plug 'Odie/gitabra'
+
+lua << EOF
+  require("gitabra").setup {
+    -- Optional call to `setup`
+    -- Leave empty to use defaults
+  }
+EOF
+
 ```
 
-It should work fine with your favorite plugin manager.
+[Packer](https://github.com/junegunn/vim-plug)
+```
+use {'Odie/gitabra',
+	opt = true,
+  cmd = {'Gitabra'},
+	config = function()
+    require("gitabra").setup {
+      -- Optional call to `setup`
+      -- Leave empty to use defaults
+    }
+	end
+}
+```
+
+## Configuration
+Gitabra currently use the following defaults.
+```
+{ 
+  disclosure_sign = {
+    collapsed = ">",
+    expanded = "⋁"
+  }
+}
+```
+Modified settings can be set via `gitabra.setup()`. This needs to be done before activating
+the plugin via the `Gitabra` command the first time.
 
 ## WARNING!
 This is alpha quality software!
