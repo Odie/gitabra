@@ -43,14 +43,14 @@ EOF
 [Packer](https://github.com/junegunn/vim-plug)
 ```
 use {'Odie/gitabra',
-	opt = true,
+  opt = true,
   cmd = {'Gitabra'},
-	config = function()
+  config = function()
     require("gitabra").setup {
-      -- Optional call to `setup`
-      -- Leave empty to use defaults
-    }
-	end
+    -- Optional call to `setup`
+    -- Leave empty to use defaults
+  }
+  end
 }
 ```
 
