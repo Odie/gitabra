@@ -76,6 +76,7 @@ end
 --
 local function system(cmd, opt, callback)
   local result = {
+    job = nil,
     output = {},
     err_output = {},
     done = false

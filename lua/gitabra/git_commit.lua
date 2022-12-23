@@ -31,9 +31,9 @@ local function finish_commit()
         singleton = nil
         u.system({'touch', commit_state.temppath..".exit"})
         promise.wait(commit_state.promise, 1000)
-        if #commit_state.promise.job.err_output ~= 0 then
+        if commit_state.promise.job.exit_code ~= 0 and #commit_state.promise.job.err_output ~= 0 then
             vim.cmd(string.format("echom '%s'",
-                u.remove_trailing_newlines(table.concat(commit_state.job.err_output))))
+                u.remove_trailing_newlines(table.concat(commit_state.promise.job.err_output))))
         end
     end
 end
