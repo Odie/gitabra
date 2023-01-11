@@ -314,7 +314,7 @@ local function find_window_for_buffer(bufnr)
 end
 
 local function setup_buffer()
-  local buf = vim.api.nvim_create_buf(true, false)
+  local buf = vim.api.nvim_create_buf(false, true)
   api.nvim_buf_set_name(buf, status_buf_name)
   vim.bo[buf].swapfile = false
   vim.bo[buf].buftype = 'nofile'

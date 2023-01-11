@@ -42,7 +42,7 @@ local function setup_keybinds(bufnr)
 end
 
 local function setup_buffer()
-  local buf = vim.api.nvim_create_buf(true, false)
+  local buf = vim.api.nvim_create_buf(false, true)
   vim.bo[buf].swapfile = false
   vim.bo[buf].buftype = 'nofile'
   setup_keybinds(buf)
