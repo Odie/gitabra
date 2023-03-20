@@ -292,7 +292,7 @@ local function setup_keybinds(bufnr)
   set_keymap('n', 'k', '<cmd>lua require("gitabra.git_status").prev_line()<cr>', opts)
 end
 
-local status_buf_name = "gitabra:////gitabra_status"
+local status_buf_name = "gitabra://gitabra_status"
 
 -- Looks through all available buffers and returns the gitabra status buffer if found
 -- This helps us recover the bufnr if it becomes lost. This usually happens when the
